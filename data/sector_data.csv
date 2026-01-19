@@ -1,0 +1,29 @@
+,NAME,DAMAGE,COUNT,SPRITE_NAME,SHIELD_BONUS,PART_BONUS,SHIELD_SURGE,DESC
+E01,Skirmisher Class Ship,1,13,E01.png,0,1,0,Enemy
+E02,Enforcer Class Ship,2,12,E02.png,0,2,0,Enemy
+E03,Ravager Class Ship,3,10,E03.png,0,3,0,Enemy
+E04,Suppressor Class Ship,4,8,E04.png,0,4,0,Enemy
+E05,Bulwark Class Ship,5,8,E05.png,0,5,0,Enemy
+E06,Annihilator Class Ship,6,5,E06.png,0,6,0,Enemy
+E07,Termination Class Ship,7,4,E07.png,0,7,0,Enemy
+E08,Obliterator Class Ship,8,8,E08.png,0,8,0,Enemy
+E09,Harbinger Class Ship,9,2,E09.png,0,9,0,Enemy
+E10,Command Core,10,1,E10.png,0,10,0,When defeated it changes E15 from active to inactive.
+E11,Local Warlord,1,1,E11.png,0,1,0,Enemy
+E12,Dominion Fighter Ship,5,6,E12.png,0,5,0,Enemy
+E13,Rebel Trap,11,1,B01.png,0,1,0,
+E14,Merc Ship,5,1,E14.png,0,0,0,
+E15,Extinction Engine,100,9,E15.png,0,3,0,Has two states (active and inactive).  When active it takes 100 damage. When inactive it gives 3 parts.
+B01,Rebel Stash,0,3,B01.png,3,0,0,
+B02,Rebel Stash,0,1,B01.png,0,0,1,
+B03,Shield Surge,0,9,B02.png,0,0,1,Add to inventory
+E16,Trader Ship,5,1,E16.png,0,5,0,When defeated it reveals the E05 and E08 ships
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,103,,,,,
