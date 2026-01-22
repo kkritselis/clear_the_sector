@@ -5,7 +5,8 @@ const GameState = {
     maxShields: 5,
     parts: 0,
     isAlive: true,
-    board: [] // Will hold cell data including enemies
+    board: [], // Will hold cell data including enemies
+    playerHexIndex: null // Current hex index where player is located
 };
 
 // Game data loaded from CSV
@@ -438,6 +439,180 @@ function setupBoardPlacements(svg) {
     
     // Add neighbor damage sums to all hexes
     addNeighborDamageSums(svg);
+    
+    // Place player on a random empty hex
+    placePlayer(svg);
+    
+    // Cover all hexes with entities to hide their contents
+    coverHexes(svg);
+}
+
+// Place the player sprite on a random empty hex
+function placePlayer(svg) {
+    const hexPaths = svg.querySelectorAll('path');
+    const totalHexes = hexPaths.length;
+    
+    // Find all empty hexes (hexes without entities)
+    const emptyHexes = [];
+    for (let i = 0; i < totalHexes; i++) {
+        const cell = GameState.board[i];
+        if (!cell || !cell.entity) {
+            emptyHexes.push(i);
+        }
+    }
+    
+    if (emptyHexes.length === 0) {
+        console.warn('No empty hexes available for player placement');
+        return;
+    }
+    
+    // Pick a random empty hex
+    const randomIndex = Math.floor(Math.random() * emptyHexes.length);
+    const playerHexIndex = emptyHexes[randomIndex];
+    
+    console.log(`Placing player at hex index ${playerHexIndex}`);
+    
+    // Get the hex path
+    const hexPath = hexPaths[playerHexIndex];
+    if (!hexPath) return;
+    
+    // Get bounding box of the hex
+    const bbox = hexPath.getBBox();
+    
+    // Check if player image already exists
+    const existingPlayerImage = svg.querySelector('image[data-player="true"]');
+    if (existingPlayerImage) {
+        existingPlayerImage.remove();
+    }
+    
+    // Create player image element
+    const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    playerImage.setAttribute('data-player', 'true');
+    playerImage.setAttribute('data-hex-index', playerHexIndex.toString());
+    
+    // Center the player image on the hex
+    const imageSize = 40;
+    const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
+    const imageY = bbox.y + bbox.height / 2 - imageSize / 2;
+    
+    playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
+    playerImage.setAttribute('x', imageX.toString());
+    playerImage.setAttribute('y', imageY.toString());
+    playerImage.setAttribute('width', imageSize.toString());
+    playerImage.setAttribute('height', imageSize.toString());
+    playerImage.setAttribute('opacity', '1');
+    playerImage.setAttribute('pointer-events', 'none'); // Don't block clicks
+    
+    // Append player image to SVG
+    svg.appendChild(playerImage);
+    
+    // Store player position in game state
+    GameState.playerHexIndex = playerHexIndex;
+    
+    console.log('Player placed successfully');
+}
+
+// Cover all hexes with entities to hide their contents
+function coverHexes(svg) {
+    const hexPaths = svg.querySelectorAll('path');
+    
+    // Create a group for covers to ensure they're on top
+    let coverGroup = svg.querySelector('g.hex-covers');
+    if (coverGroup) {
+        coverGroup.remove(); // Remove existing group if present
+    }
+    coverGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    coverGroup.setAttribute('class', 'hex-covers');
+    
+    hexPaths.forEach((hexPath, hexIndex) => {
+        const cell = GameState.board[hexIndex];
+        
+        // Skip if hex has no entity, or if it's the player's hex
+        if (!cell || !cell.entity || hexIndex === GameState.playerHexIndex) {
+            return;
+        }
+        
+        // Hide images and text for this hex initially
+        const images = svg.querySelectorAll(`image[data-hex-index="${hexIndex}"]`);
+        images.forEach(img => {
+            if (!img.hasAttribute('data-player')) {
+                img.setAttribute('opacity', '0');
+            }
+        });
+        
+        const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+        damageTexts.forEach(text => {
+            text.setAttribute('opacity', '0');
+        });
+        
+        const sumTexts = svg.querySelectorAll(`text[data-hex-sum-index="${hexIndex}"]`);
+        sumTexts.forEach(text => {
+            text.setAttribute('opacity', '0');
+        });
+        
+        // Get the path's 'd' attribute to recreate it
+        const pathData = hexPath.getAttribute('d');
+        if (!pathData) return;
+        
+        // Create a new cover path (don't clone to avoid inheriting unwanted attributes)
+        const coverPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        coverPath.setAttribute('d', pathData);
+        coverPath.setAttribute('data-hex-cover', hexIndex.toString());
+        coverPath.setAttribute('data-hex-index', hexIndex.toString());
+        coverPath.setAttribute('class', 'hex-cover');
+        coverPath.setAttribute('fill', '#1a2332'); // Dark fill to cover contents
+        coverPath.setAttribute('stroke', '#0d1117'); // Dark stroke
+        coverPath.setAttribute('stroke-width', '1');
+        coverPath.setAttribute('opacity', '1');
+        coverPath.setAttribute('pointer-events', 'all');
+        coverPath.style.cursor = 'pointer';
+        
+        // Add click handler to cover so it can be clicked to reveal
+        coverPath.addEventListener('click', handleHexClick);
+        
+        // Append cover to the group
+        coverGroup.appendChild(coverPath);
+    });
+    
+    // Append the cover group LAST to ensure it renders on top of everything
+    svg.appendChild(coverGroup);
+    
+    console.log('Covered hexes with entities');
+}
+
+// Remove cover from a hex when revealed
+function removeHexCover(hexIndex) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const cover = svg.querySelector(`path[data-hex-cover="${hexIndex}"]`);
+    if (cover) {
+        cover.remove();
+    }
+}
+
+// Show hex contents when revealed
+function revealHexContents(hexIndex) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    // Show images for this hex
+    const images = svg.querySelectorAll(`image[data-hex-index="${hexIndex}"]`);
+    images.forEach(img => {
+        img.setAttribute('opacity', '1');
+    });
+    
+    // Show damage text for this hex
+    const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+    damageTexts.forEach(text => {
+        text.setAttribute('opacity', '1');
+    });
+    
+    // Show sum text for this hex
+    const sumTexts = svg.querySelectorAll(`text[data-hex-sum-index="${hexIndex}"]`);
+    sumTexts.forEach(text => {
+        text.setAttribute('opacity', '1');
+    });
 }
 
 // Calculate and display the sum of damage from surrounding hexes
@@ -543,6 +718,10 @@ function handleHexClick(event) {
     // Mark cell as revealed
     cell.revealed = true;
     hex.dataset.revealed = 'true';
+    
+    // Remove cover overlay if it exists and show contents
+    removeHexCover(index);
+    revealHexContents(index);
     
     // Check if there's an enemy in this cell
     if (cell.enemy || cell.entity) {
