@@ -8,6 +8,12 @@ const GameState = {
     board: [] // Will hold cell data including enemies
 };
 
+// Game data loaded from CSV
+const GameData = {
+    entities: [], // Array of entity objects parsed from CSV
+    images: {} // Cache of loaded images by sprite name
+};
+
 // DOM Elements
 const shieldsDisplay = document.getElementById('shields-value');
 const partsDisplay = document.getElementById('parts-value');
@@ -15,8 +21,114 @@ const boardContainer = document.getElementById('board-container');
 
 // Initialize the game
 async function init() {
-    await loadGameBoard();
-    updateDisplays();
+    try {
+        await loadCSVData();
+        await preloadImages();
+        await loadGameBoard();
+        updateDisplays();
+        console.log('Game initialized successfully');
+        console.log(`Loaded ${GameData.entities.length} entities from CSV`);
+    } catch (error) {
+        console.error('Error initializing game:', error);
+        boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game data</p>';
+    }
+}
+
+// Parse CSV text into array of objects
+function parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return [];
+    
+    // Parse header row
+    const headers = lines[0].split(',').map(h => h.trim());
+    
+    // Parse data rows
+    const entities = [];
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.split(',').every(cell => !cell.trim())) continue; // Skip empty rows
+        
+        const values = line.split(',').map(v => v.trim());
+        if (values.length < headers.length) continue; // Skip incomplete rows
+        
+        // Create entity object
+        const entity = {};
+        
+        // First column is the ID (no header name)
+        if (values[0]) {
+            entity.id = values[0];
+        }
+        
+        // Map remaining columns to headers (skip first empty header)
+        headers.forEach((header, index) => {
+            if (index === 0) return; // Skip first empty header column
+            const value = values[index] || '';
+            // Convert numeric fields
+            if (['DAMAGE', 'COUNT', 'SHIELD_BONUS', 'PART_BONUS', 'SHIELD_SURGE'].includes(header)) {
+                entity[header.toLowerCase()] = value ? parseInt(value, 10) : 0;
+            } else {
+                entity[header.toLowerCase()] = value;
+            }
+        });
+        
+        // Only add entities with a valid ID and sprite
+        if (entity.id && entity.sprite_name) {
+            entities.push(entity);
+        }
+    }
+    
+    return entities;
+}
+
+// Load CSV data file
+async function loadCSVData() {
+    try {
+        const response = await fetch('data/sector_data.csv');
+        if (!response.ok) {
+            throw new Error(`Failed to load CSV: ${response.statusText}`);
+        }
+        const csvText = await response.text();
+        GameData.entities = parseCSV(csvText);
+        console.log('CSV data loaded:', GameData.entities);
+    } catch (error) {
+        console.error('Error loading CSV data:', error);
+        throw error;
+    }
+}
+
+// Preload all images referenced in the CSV
+async function preloadImages() {
+    const imagePromises = [];
+    const uniqueSprites = new Set();
+    
+    // Collect all unique sprite names from entities
+    GameData.entities.forEach(entity => {
+        if (entity.sprite_name) {
+            uniqueSprites.add(entity.sprite_name);
+        }
+    });
+    
+    // Create image loading promises
+    uniqueSprites.forEach(spriteName => {
+        const img = new Image();
+        const promise = new Promise((resolve, reject) => {
+            img.onload = () => {
+                GameData.images[spriteName] = img;
+                console.log(`Loaded image: ${spriteName}`);
+                resolve(img);
+            };
+            img.onerror = () => {
+                console.warn(`Failed to load image: ${spriteName}`);
+                reject(new Error(`Failed to load image: ${spriteName}`));
+            };
+            img.src = `img/${spriteName}`;
+        });
+        imagePromises.push(promise);
+    });
+    
+    // Wait for all images to load
+    await Promise.allSettled(imagePromises);
+    console.log(`Preloaded ${Object.keys(GameData.images).length} images`);
 }
 
 // Load the SVG game board
@@ -37,9 +149,361 @@ async function loadGameBoard() {
     }
 }
 
+// Hex coordinate system - stores hex coordinates for each index
+const HexCoordinates = {
+    indexToCoords: {}, // index -> {q, r, s}
+    coordsToIndex: {}  // "q,r,s" -> index
+};
+
+// Parse hex coordinates from SVG path ID
+function parseHexCoords(pathId) {
+    if (!pathId) return null;
+    
+    // Decode hex-encoded characters: _x2C_ = comma, _x2D_ = minus, _x30_-_x39_ = 0-9
+    let decoded = pathId
+        .replace(/_x2C_/g, ',')
+        .replace(/_x2D_/g, '-')
+        .replace(/_x([0-9A-F]{2})_/g, (match, hex) => {
+            const charCode = parseInt(hex, 16);
+            return String.fromCharCode(charCode);
+        });
+    
+    // Extract numbers (handles formats like "0,-6,6" or "0 -6 6")
+    const numbers = decoded.match(/-?\d+/g);
+    if (numbers && numbers.length >= 3) {
+        return {
+            q: parseInt(numbers[0], 10),
+            r: parseInt(numbers[1], 10),
+            s: parseInt(numbers[2], 10)
+        };
+    }
+    return null;
+}
+
+// Get neighbor coordinates for a hex (cube coordinates)
+function getHexNeighbors(q, r, s) {
+    return [
+        {q: q + 1, r: r - 1, s: s},     // NE
+        {q: q + 1, r: r, s: s - 1},     // E
+        {q: q, r: r + 1, s: s - 1},     // SE
+        {q: q - 1, r: r + 1, s: s},     // SW
+        {q: q - 1, r: r, s: s + 1},     // W
+        {q: q, r: r - 1, s: s + 1}      // NW
+    ];
+}
+
+// Build coordinate mapping from SVG paths
+function buildHexCoordinateMap(svg) {
+    const hexPaths = svg.querySelectorAll('path');
+    
+    hexPaths.forEach((path, index) => {
+        const coords = parseHexCoords(path.id);
+        if (coords) {
+            HexCoordinates.indexToCoords[index] = coords;
+            const coordKey = `${coords.q},${coords.r},${coords.s}`;
+            HexCoordinates.coordsToIndex[coordKey] = index;
+        }
+    });
+    
+    console.log(`Built coordinate map for ${Object.keys(HexCoordinates.indexToCoords).length} hexes`);
+}
+
+// Get neighbor indices for a given hex index
+function getNeighborIndices(hexIndex) {
+    const coords = HexCoordinates.indexToCoords[hexIndex];
+    
+    // If we have coordinates, use them
+    if (coords) {
+        const neighbors = getHexNeighbors(coords.q, coords.r, coords.s);
+        const neighborIndices = [];
+        
+        neighbors.forEach(neighbor => {
+            const coordKey = `${neighbor.q},${neighbor.r},${neighbor.s}`;
+            const neighborIndex = HexCoordinates.coordsToIndex[coordKey];
+            if (neighborIndex !== undefined) {
+                neighborIndices.push(neighborIndex);
+            }
+        });
+        
+        if (neighborIndices.length > 0) {
+            return neighborIndices;
+        }
+    }
+    
+    // Fallback: use geometric proximity (find closest hexes by center distance)
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return [];
+    
+    const hexPaths = svg.querySelectorAll('path');
+    const targetPath = hexPaths[hexIndex];
+    if (!targetPath) return [];
+    
+    const targetBBox = targetPath.getBBox();
+    const targetCenterX = targetBBox.x + targetBBox.width / 2;
+    const targetCenterY = targetBBox.y + targetBBox.height / 2;
+    
+    // Calculate distances to all other hexes
+    const distances = [];
+    hexPaths.forEach((path, index) => {
+        if (index === hexIndex) return;
+        
+        const bbox = path.getBBox();
+        const centerX = bbox.x + bbox.width / 2;
+        const centerY = bbox.y + bbox.height / 2;
+        
+        const dx = centerX - targetCenterX;
+        const dy = centerY - targetCenterY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Hex width is approximately 83 pixels (41.6 * 2), so neighbors should be around 80-90 pixels away
+        if (distance < 100) {
+            distances.push({ index, distance });
+        }
+    });
+    
+    // Sort by distance and take the 6 closest (hexes have 6 neighbors)
+    distances.sort((a, b) => a.distance - b.distance);
+    return distances.slice(0, 6).map(d => d.index);
+}
+
+// Find entity by ID in CSV data
+function findEntityById(entityId) {
+    return GameData.entities.find(entity => {
+        // Check if the first column (ID) matches
+        // The CSV parser should have stored this, but let's check the raw data
+        // Actually, looking at the CSV, the first column is the ID (E01, E11, etc.)
+        // We need to check the entity structure
+        return entity.name && entity.name.toLowerCase().includes(entityId.toLowerCase());
+    });
+}
+
+// Place an entity on a hex cell
+function placeEntityOnHex(hexIndex, entity) {
+    if (!GameState.board[hexIndex]) {
+        GameState.board[hexIndex] = {
+            revealed: false,
+            enemy: null,
+            entity: null
+        };
+    }
+    
+    // Store entity data
+    GameState.board[hexIndex].entity = entity;
+    GameState.board[hexIndex].enemy = entity; // For now, treat as enemy
+    
+    // Render entity visually (for fine-tuning - make visible)
+    const svg = boardContainer.querySelector('svg');
+    if (svg) {
+        const hexPaths = svg.querySelectorAll('path');
+        const hexPath = hexPaths[hexIndex];
+        
+        if (hexPath && entity.sprite_name) {
+            // Get bounding box of the hex path
+            const bbox = hexPath.getBBox();
+            
+            // Check if image already exists for this hex
+            const existingImage = svg.querySelector(`image[data-hex-index="${hexIndex}"]`);
+            if (existingImage) {
+                existingImage.remove(); // Remove old image if exists
+            }
+            
+            // Check if damage text already exists for this hex
+            const existingText = svg.querySelector(`text[data-hex-index="${hexIndex}"]`);
+            if (existingText) {
+                existingText.remove(); // Remove old text if exists
+            }
+            
+            // Create image element
+            const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+            imageElement.setAttribute('data-hex-index', hexIndex.toString());
+            
+            // Center the image on the hex
+            const imageSize = 40;
+            const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
+            const imageY = bbox.y + bbox.height / 2 - imageSize / 2;
+            
+            imageElement.setAttributeNS('http://www.w3.org/1999/xlink', 'href', `img/${entity.sprite_name}`);
+            imageElement.setAttribute('x', imageX.toString());
+            imageElement.setAttribute('y', imageY.toString());
+            imageElement.setAttribute('width', imageSize.toString());
+            imageElement.setAttribute('height', imageSize.toString());
+            imageElement.setAttribute('opacity', '1'); // Visible for fine-tuning
+            imageElement.setAttribute('pointer-events', 'none'); // Don't block clicks
+            
+            // Append image to SVG
+            svg.appendChild(imageElement);
+            
+            // Add damage text if entity has damage
+            if (entity.damage !== undefined && entity.damage !== null) {
+                const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                damageText.setAttribute('data-hex-index', hexIndex.toString());
+                damageText.setAttribute('x', (imageX - 8).toString()); // Lower left of sprite (more offset)
+                damageText.setAttribute('y', (imageY + imageSize + 8).toString());
+                damageText.setAttribute('fill', '#ff0000'); // Red color
+                damageText.setAttribute('font-size', '24');
+                damageText.setAttribute('font-weight', 'bold');
+                damageText.setAttribute('font-family', 'Arial, sans-serif');
+                damageText.setAttribute('pointer-events', 'none'); // Don't block clicks
+                damageText.textContent = entity.damage.toString();
+                
+                // Append text to SVG
+                svg.appendChild(damageText);
+            }
+        }
+    }
+}
+
+// Set up board with initial placements
+function setupBoardPlacements(svg) {
+    // Find E11 (Local Warlord) by ID
+    const e11 = GameData.entities.find(e => e.id === 'E11');
+    if (!e11) {
+        console.warn('E11 (Local Warlord) not found in CSV data');
+        console.log('Available entities:', GameData.entities.map(e => e.id));
+        return;
+    }
+    
+    // Find E12 (Dominion Fighter Ship) by ID
+    const e12 = GameData.entities.find(e => e.id === 'E12');
+    if (!e12) {
+        console.warn('E12 (Dominion Fighter Ship) not found in CSV data');
+        console.log('Available entities:', GameData.entities.map(e => e.id));
+        return;
+    }
+    
+    // Get all hex indices
+    const hexPaths = svg.querySelectorAll('path');
+    const totalHexes = hexPaths.length;
+    
+    // Track occupied hexes
+    const occupiedHexes = new Set();
+    
+    // Place E11 at a random location
+    const randomIndex = Math.floor(Math.random() * totalHexes);
+    console.log(`Placing E11 at hex index ${randomIndex}`);
+    placeEntityOnHex(randomIndex, e11);
+    occupiedHexes.add(randomIndex);
+    
+    // Get all neighbors of E11's location
+    const neighborIndices = getNeighborIndices(randomIndex);
+    console.log(`Found ${neighborIndices.length} neighbors for E11`);
+    
+    // Place E12 ships at all connecting hexes
+    neighborIndices.forEach(neighborIndex => {
+        placeEntityOnHex(neighborIndex, e12);
+        occupiedHexes.add(neighborIndex);
+    });
+    
+    console.log(`Placed E11 and ${neighborIndices.length} E12 ships`);
+    
+    // Get all remaining entities (excluding E11 and E12)
+    const remainingEntities = GameData.entities.filter(e => e.id !== 'E11' && e.id !== 'E12');
+    
+    // Create a list of all hex indices that are available
+    const availableHexes = [];
+    for (let i = 0; i < totalHexes; i++) {
+        if (!occupiedHexes.has(i)) {
+            availableHexes.push(i);
+        }
+    }
+    
+    // Shuffle available hexes for random distribution
+    function shuffleArray(array) {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+    }
+    
+    const shuffledHexes = shuffleArray(availableHexes);
+    let hexIndex = 0;
+    
+    // Place remaining entities based on their COUNT
+    remainingEntities.forEach(entity => {
+        const count = entity.count || 0;
+        console.log(`Placing ${count} of ${entity.id} (${entity.name})`);
+        
+        for (let i = 0; i < count && hexIndex < shuffledHexes.length; i++) {
+            const targetHex = shuffledHexes[hexIndex];
+            placeEntityOnHex(targetHex, entity);
+            occupiedHexes.add(targetHex);
+            hexIndex++;
+        }
+    });
+    
+    console.log(`Placed all entities. Total occupied hexes: ${occupiedHexes.size}`);
+    console.log(`Remaining empty hexes: ${totalHexes - occupiedHexes.size}`);
+    
+    // Add neighbor damage sums to all hexes
+    addNeighborDamageSums(svg);
+}
+
+// Calculate and display the sum of damage from surrounding hexes
+function addNeighborDamageSums(svg) {
+    const hexPaths = svg.querySelectorAll('path');
+    
+    hexPaths.forEach((hexPath, hexIndex) => {
+        // Get neighbors of this hex
+        const neighborIndices = getNeighborIndices(hexIndex);
+        
+        // Sum up damage from all neighbors
+        let totalDamage = 0;
+        neighborIndices.forEach(neighborIndex => {
+            const neighborCell = GameState.board[neighborIndex];
+            if (neighborCell && neighborCell.entity && neighborCell.entity.damage !== undefined) {
+                totalDamage += neighborCell.entity.damage || 0;
+            }
+        });
+        
+        // Only show text if there's damage to display
+        if (totalDamage > 0) {
+            // Get bounding box of the hex
+            const bbox = hexPath.getBBox();
+            
+            // Check if this hex is empty (no entity)
+            const cell = GameState.board[hexIndex];
+            const isEmpty = !cell || !cell.entity;
+            
+            // Create text element
+            const damageSumText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            damageSumText.setAttribute('data-hex-sum-index', hexIndex.toString());
+            
+            if (isEmpty) {
+                // Center the text for empty hexes
+                damageSumText.setAttribute('x', (bbox.x + bbox.width / 2).toString());
+                damageSumText.setAttribute('y', (10 +bbox.y + bbox.height / 2).toString());
+                damageSumText.setAttribute('text-anchor', 'middle'); // Center-align text
+                damageSumText.setAttribute('font-size', '30'); // Double font size
+            } else {
+                // Upper right corner for hexes with entities
+                damageSumText.setAttribute('x', (bbox.x + bbox.width - 15).toString());
+                damageSumText.setAttribute('y', (bbox.y + 30).toString());
+                damageSumText.setAttribute('text-anchor', 'end'); // Right-align text
+                damageSumText.setAttribute('font-size', '20');
+            }
+            
+            damageSumText.setAttribute('fill', '#ffff00'); // Yellow color
+            damageSumText.setAttribute('font-weight', 'bold');
+            damageSumText.setAttribute('font-family', 'Arial, sans-serif');
+            damageSumText.setAttribute('pointer-events', 'none'); // Don't block clicks
+            damageSumText.textContent = totalDamage.toString();
+            
+            // Append text to SVG
+            svg.appendChild(damageSumText);
+        }
+    });
+    
+    console.log('Added neighbor damage sums to all hexes');
+}
+
 // Set up click handlers for hex cells
 function setupBoardInteractions(svg) {
     const hexPaths = svg.querySelectorAll('path');
+    
+    // Build coordinate map first
+    buildHexCoordinateMap(svg);
     
     hexPaths.forEach((path, index) => {
         path.dataset.hexIndex = index;
@@ -54,6 +518,9 @@ function setupBoardInteractions(svg) {
     });
     
     console.log(`Game board loaded with ${hexPaths.length} hex cells`);
+    
+    // Set up initial board placements
+    setupBoardPlacements(svg);
 }
 
 // Handle clicking on a hex cell
@@ -78,11 +545,12 @@ function handleHexClick(event) {
     hex.dataset.revealed = 'true';
     
     // Check if there's an enemy in this cell
-    if (cell.enemy) {
-        const enemy = cell.enemy;
-        console.log(`Encountered enemy with attack value: ${enemy.attack}`);
+    if (cell.enemy || cell.entity) {
+        const enemy = cell.enemy || cell.entity;
+        const attackValue = enemy.damage || 0;
+        console.log(`Encountered enemy with attack value: ${attackValue}`);
         
-        if (enemy.attack > GameState.shields) {
+        if (attackValue > GameState.shields) {
             // Player dies
             playerDeath(hex, enemy);
         } else {
@@ -97,13 +565,15 @@ function handleHexClick(event) {
 
 // Player defeats an enemy
 function defeatEnemy(hex, enemy) {
+    const attackValue = enemy.damage || 0;
+    
     // Subtract attack from shields
-    GameState.shields -= enemy.attack;
+    GameState.shields -= attackValue;
     
     // Scavenge parts equal to attack value
-    GameState.parts += enemy.attack;
+    GameState.parts += attackValue;
     
-    console.log(`Enemy defeated! Lost ${enemy.attack} shields, gained ${enemy.attack} parts`);
+    console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${attackValue} parts`);
     
     // Visual feedback
     hex.classList.add('defeated');
@@ -113,10 +583,11 @@ function defeatEnemy(hex, enemy) {
 
 // Player death
 function playerDeath(hex, enemy) {
+    const attackValue = enemy.damage || 0;
     GameState.isAlive = false;
     GameState.shields = 0;
     
-    console.log(`GAME OVER! Enemy attack (${enemy.attack}) exceeded shields`);
+    console.log(`GAME OVER! Enemy attack (${attackValue}) exceeded shields`);
     
     // Visual feedback
     hex.classList.add('death');
