@@ -9,13 +9,15 @@ const GameState = {
     playerHexIndex: null, // Current hex index where player is located
     clearedHexes: new Set(), // Track hexes that have been cleared of entities
     totalHexesWithEntities: 0, // Total number of hexes that contain entities (for win condition)
-    repairCount: 0 // Track number of repairs for upgrade system
+    repairCount: 0, // Track number of repairs for upgrade system
+    damageMarkers: {} // Track damage markers: hexIndex -> damage number
 };
 
 // Game data loaded from CSV
 const GameData = {
     entities: [], // Array of entity objects parsed from CSV
-    images: {} // Cache of loaded images by sprite name
+    images: {}, // Cache of loaded images by sprite name
+    markerSvg: null // Cached right-click marker SVG
 };
 
 // DOM Elements
@@ -28,6 +30,7 @@ async function init() {
     try {
         await loadCSVData();
         await preloadImages();
+        await loadMarkerSVG();
         await loadGameBoard();
         setupShieldRepair();
         updateDisplays();
@@ -36,6 +39,20 @@ async function init() {
     } catch (error) {
         console.error('Error initializing game:', error);
         boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game data</p>';
+    }
+}
+
+// Load the right-click marker SVG
+async function loadMarkerSVG() {
+    try {
+        const response = await fetch('img/right_click.svg');
+        const svgText = await response.text();
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+        GameData.markerSvg = svgDoc.documentElement;
+        console.log('Marker SVG loaded');
+    } catch (error) {
+        console.error('Error loading marker SVG:', error);
     }
 }
 
@@ -677,6 +694,12 @@ function coverHexes(svg) {
         // Add click handler to cover so it can be clicked to reveal
         coverPolygon.addEventListener('click', handleHexClick);
         
+        // Add right-click handler for damage markers (only on hidden hexes)
+        coverPolygon.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            handleRightClick(e, hexIndex);
+        });
+        
         // Don't add hover handlers to covers - hover only works on revealed hexes
         
         // Append cover to the group
@@ -685,6 +708,16 @@ function coverHexes(svg) {
     
     // Append the cover group LAST to ensure it renders on top of everything
     svg.appendChild(coverGroup);
+    
+    // Restore any existing damage markers
+    Object.keys(GameState.damageMarkers).forEach(hexIndex => {
+        const damage = GameState.damageMarkers[hexIndex];
+        const cell = GameState.board[hexIndex];
+        // Only restore markers on hidden hexes
+        if (cell && !cell.revealed && damage > 0) {
+            placeDamageMarker(parseInt(hexIndex, 10), damage);
+        }
+    });
     
     console.log('Covered all hexes (except player starting hex)');
 }
@@ -697,6 +730,256 @@ function removeHexCover(hexIndex) {
     const cover = svg.querySelector(`polygon[data-hex-cover="${hexIndex}"]`);
     if (cover) {
         cover.remove();
+    }
+    
+    // Remove damage marker when hex is revealed
+    removeDamageMarker(hexIndex);
+    delete GameState.damageMarkers[hexIndex];
+}
+
+// Handle right-click on hidden hex to show damage marker menu
+function handleRightClick(event, hexIndex) {
+    if (!GameState.isAlive) {
+        return;
+    }
+    
+    const cell = GameState.board[hexIndex];
+    if (!cell || cell.revealed) {
+        return; // Don't allow markers on revealed hexes
+    }
+    
+    event.preventDefault();
+    
+    // Check if there's already a marker - if so, remove it on right-click
+    if (GameState.damageMarkers[hexIndex]) {
+        removeDamageMarker(hexIndex);
+        delete GameState.damageMarkers[hexIndex];
+        return;
+    }
+    
+    // Show number selection menu
+    showDamageMarkerMenu(event, hexIndex);
+}
+
+// Show damage marker selection menu
+function showDamageMarkerMenu(event, hexIndex) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg || !GameData.markerSvg) return;
+    
+    // Remove any existing menu
+    hideDamageMarkerMenu();
+    
+    // Get hex polygon to position menu
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    const hexPolygon = hexPolygons[hexIndex];
+    if (!hexPolygon) return;
+    
+    const bbox = hexPolygon.getBBox();
+    const hexCenterX = bbox.x + bbox.width / 2;
+    const hexCenterY = bbox.y + bbox.height / 2;
+    
+    // Create menu container group
+    const menuGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    menuGroup.setAttribute('id', 'damage-marker-menu');
+    menuGroup.setAttribute('data-menu-hex', hexIndex.toString());
+    
+    // Get viewBox dimensions
+    const markerViewBox = GameData.markerSvg.getAttribute('viewBox');
+    let markerWidth = 127.9;
+    let markerHeight = 146.5;
+    
+    if (markerViewBox) {
+        const viewBoxValues = markerViewBox.split(' ').map(v => parseFloat(v));
+        markerWidth = viewBoxValues[2] || 127.9;
+        markerHeight = viewBoxValues[3] || 146.5;
+    }
+    
+    // Scale should be 1.5
+    const menuScale = .15;
+    
+    // Clone the entire marker SVG
+    const clonedSvg = GameData.markerSvg.cloneNode(true);
+    
+    // Calculate marker center in its coordinate system (viewBox starts at 0,0)
+    const markerCenterX = markerWidth / 2;
+    const markerCenterY = markerHeight / 2;
+    
+    // Center the menu on the hex, with adjustments to move left and up
+    // Adjustments: move left by 20% of scaled width, move up by 20% of scaled height
+    const offsetX = markerWidth * menuScale;
+    const offsetY = markerHeight * menuScale;
+    
+    const menuX = hexCenterX - (markerCenterX * menuScale) - offsetX - 80;
+    const menuY = hexCenterY - (markerCenterY * menuScale) - offsetY - 48;
+    
+    // Set transform: translate to position, then scale
+    menuGroup.setAttribute('transform', `translate(${menuX}, ${menuY}) scale(${menuScale})`);
+    
+    // Group ID map for click handling
+    const groupIdMap = {
+        '_x31_': 1,
+        '_x32_': 2,
+        '_x33_': 3,
+        '_x34_': 4,
+        '_x35_': 5,
+        '_x36_': 6,
+        '_x37_': 7,
+        '_x38_': 8,
+        '_x39_': 9,
+        '_x31_0': 10,
+        '_x31_1': 11,
+        '_x31_00': 10 // Alternative 10
+    };
+    
+    // Make each number group clickable
+    Object.keys(groupIdMap).forEach(groupId => {
+        const numberGroup = clonedSvg.querySelector(`g#${groupId}`);
+        if (numberGroup) {
+            numberGroup.style.cursor = 'pointer';
+            numberGroup.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const damage = groupIdMap[groupId];
+                selectDamageMarker(hexIndex, damage);
+                hideDamageMarkerMenu();
+            });
+        }
+    });
+    
+    // Append cloned SVG to menu group
+    menuGroup.appendChild(clonedSvg);
+    
+    // Add to SVG
+    svg.appendChild(menuGroup);
+    
+    // Add click handler to close menu when clicking outside (on hex covers)
+    const closeHandler = (e) => {
+        // Check if click is on a cover polygon (outside menu)
+        if (e.target && e.target.hasAttribute('data-hex-cover')) {
+            hideDamageMarkerMenu();
+        }
+    };
+    
+    // Listen for clicks on covers to close menu
+    setTimeout(() => {
+        const covers = svg.querySelectorAll('polygon[data-hex-cover]');
+        covers.forEach(cover => {
+            cover.addEventListener('click', closeHandler, { once: true });
+        });
+    }, 100);
+}
+
+// Hide damage marker menu
+function hideDamageMarkerMenu() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const menu = svg.querySelector('g#damage-marker-menu');
+    if (menu) {
+        menu.remove();
+    }
+}
+
+// Select a damage marker number
+function selectDamageMarker(hexIndex, damage) {
+    if (damage === 0) {
+        // Remove marker
+        removeDamageMarker(hexIndex);
+        delete GameState.damageMarkers[hexIndex];
+    } else {
+        // Place/update marker
+        GameState.damageMarkers[hexIndex] = damage;
+        placeDamageMarker(hexIndex, damage);
+    }
+}
+
+// Place a damage marker on a hex
+function placeDamageMarker(hexIndex, damage) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg || !GameData.markerSvg) return;
+    
+    // Remove existing marker if present
+    removeDamageMarker(hexIndex);
+    
+    // Get hex polygon to center marker
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    const hexPolygon = hexPolygons[hexIndex];
+    if (!hexPolygon) return;
+    
+    const bbox = hexPolygon.getBBox();
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y + bbox.height / 2;
+    
+    // Map damage number to SVG group ID
+    // Groups are: _x31_ (1), _x32_ (2), _x33_ (3), _x34_ (4), _x35_ (5), _x36_ (6), 
+    // _x37_ (7), _x38_ (8), _x39_ (9), _x31_0 (10), _x31_1 (11), _x31_00 (10?)
+    const groupIdMap = {
+        1: '_x31_',
+        2: '_x32_',
+        3: '_x33_',
+        4: '_x34_',
+        5: '_x35_',
+        6: '_x36_',
+        7: '_x37_',
+        8: '_x38_',
+        9: '_x39_',
+        10: '_x31_0',
+        11: '_x31_1'
+    };
+    
+    const groupId = groupIdMap[damage];
+    if (!groupId) return;
+    
+    // Clone the marker SVG and get the specific number group
+    const markerGroup = GameData.markerSvg.querySelector(`g#${groupId}`);
+    if (!markerGroup) {
+        console.warn(`Marker group ${groupId} not found for damage ${damage}`);
+        return;
+    }
+    
+    // Create a group for this marker
+    const markerContainer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    markerContainer.setAttribute('data-marker-hex', hexIndex.toString());
+    markerContainer.setAttribute('data-marker-damage', damage.toString());
+    
+    // Clone the number group
+    const clonedGroup = markerGroup.cloneNode(true);
+    
+    // Get the viewBox of the marker SVG to understand its coordinate system
+    const markerViewBox = GameData.markerSvg.getAttribute('viewBox');
+    let markerWidth = 127.9; // Default from viewBox
+    let markerHeight = 146.5; // Default from viewBox
+    
+    if (markerViewBox) {
+        const viewBoxValues = markerViewBox.split(' ');
+        markerWidth = parseFloat(viewBoxValues[2]) || 127.9;
+        markerHeight = parseFloat(viewBoxValues[3]) || 146.5;
+    }
+    
+    // Calculate scale to fit nicely in hex (150% of hex size)
+    const scale = Math.min(bbox.width / markerWidth, bbox.height / markerHeight) * 1.5;
+    
+    // Center the marker on the hex
+    const translateX = centerX - (markerWidth * scale / 2);
+    const translateY = centerY - (markerHeight * scale / 2);
+    
+    markerContainer.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
+    
+    markerContainer.appendChild(clonedGroup);
+    
+    // Append to SVG (after covers so it's visible on top)
+    svg.appendChild(markerContainer);
+}
+
+// Remove damage marker from a hex
+function removeDamageMarker(hexIndex) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const marker = svg.querySelector(`g[data-marker-hex="${hexIndex}"]`);
+    if (marker) {
+        marker.remove();
     }
 }
 
