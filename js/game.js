@@ -801,6 +801,23 @@ function showDamageMarkerMenu(event, hexIndex) {
     // Clone the entire marker SVG
     const clonedSvg = GameData.markerSvg.cloneNode(true);
     
+    // Change all stroke colors to yellow and text fills to yellow
+    const allPaths = clonedSvg.querySelectorAll('path, polygon');
+    allPaths.forEach(element => {
+        // Set stroke to yellow
+        const currentStroke = element.getAttribute('stroke');
+        if (currentStroke) {
+            element.setAttribute('stroke', '#ffff00'); // Yellow stroke
+        } else {
+            element.setAttribute('stroke', '#ffff00'); // Add yellow stroke if missing
+        }
+        // Change fill to yellow for text elements (white fills become yellow)
+        const currentFill = element.getAttribute('fill');
+        if (currentFill === '#fff' || currentFill === '#ffffff') {
+            element.setAttribute('fill', '#ffff00'); // Yellow fill for text
+        }
+    });
+    
     // Calculate marker center in its coordinate system (viewBox starts at 0,0)
     const markerCenterX = markerWidth / 2;
     const markerCenterY = markerHeight / 2;
@@ -817,6 +834,7 @@ function showDamageMarkerMenu(event, hexIndex) {
     menuGroup.setAttribute('transform', `translate(${menuX}, ${menuY}) scale(${menuScale})`);
     
     // Group ID map for click handling
+    // Note: _x31_00 visually displays "10" (one-zero-zero) but should map to 100 for the marker
     const groupIdMap = {
         '_x31_': 1,
         '_x32_': 2,
@@ -829,19 +847,27 @@ function showDamageMarkerMenu(event, hexIndex) {
         '_x39_': 9,
         '_x31_0': 10,
         '_x31_1': 11,
-        '_x31_00': 10 // Alternative 10
+        '_x31_00': 100 // Maps to 100 (visually "10" but represents 100)
     };
     
     // Make each number group clickable
-    Object.keys(groupIdMap).forEach(groupId => {
+    // Process in reverse order to handle longer IDs first (e.g., _x31_1 before _x31_0)
+    const sortedGroupIds = Object.keys(groupIdMap).sort((a, b) => b.length - a.length);
+    
+    sortedGroupIds.forEach(groupId => {
         const numberGroup = clonedSvg.querySelector(`g#${groupId}`);
         if (numberGroup) {
             numberGroup.style.cursor = 'pointer';
             numberGroup.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const damage = groupIdMap[groupId];
-                selectDamageMarker(hexIndex, damage);
-                hideDamageMarkerMenu();
+                // Use currentTarget to get the group the listener is attached to
+                // This ensures we get the correct group even if clicking on child elements
+                const clickedGroup = e.currentTarget;
+                if (clickedGroup && clickedGroup.id === groupId) {
+                    const damage = groupIdMap[groupId];
+                    selectDamageMarker(hexIndex, damage);
+                    hideDamageMarkerMenu();
+                }
             });
         }
     });
@@ -887,16 +913,16 @@ function selectDamageMarker(hexIndex, damage) {
         removeDamageMarker(hexIndex);
         delete GameState.damageMarkers[hexIndex];
     } else {
-        // Place/update marker
+        // Place/update marker - display as yellow text centered on hex
         GameState.damageMarkers[hexIndex] = damage;
-        placeDamageMarker(hexIndex, damage);
+        placeDamageMarkerText(hexIndex, damage);
     }
 }
 
-// Place a damage marker on a hex
-function placeDamageMarker(hexIndex, damage) {
+// Place a damage marker as yellow text on a hex
+function placeDamageMarkerText(hexIndex, damage) {
     const svg = boardContainer.querySelector('svg');
-    if (!svg || !GameData.markerSvg) return;
+    if (!svg) return;
     
     // Remove existing marker if present
     removeDamageMarker(hexIndex);
@@ -909,67 +935,26 @@ function placeDamageMarker(hexIndex, damage) {
     
     const bbox = hexPolygon.getBBox();
     const centerX = bbox.x + bbox.width / 2;
-    const centerY = bbox.y + bbox.height / 2;
+    const topY = bbox.y + 70; // Top of hex
     
-    // Map damage number to SVG group ID
-    // Groups are: _x31_ (1), _x32_ (2), _x33_ (3), _x34_ (4), _x35_ (5), _x36_ (6), 
-    // _x37_ (7), _x38_ (8), _x39_ (9), _x31_0 (10), _x31_1 (11), _x31_00 (10?)
-    const groupIdMap = {
-        1: '_x31_',
-        2: '_x32_',
-        3: '_x33_',
-        4: '_x34_',
-        5: '_x35_',
-        6: '_x36_',
-        7: '_x37_',
-        8: '_x38_',
-        9: '_x39_',
-        10: '_x31_0',
-        11: '_x31_1'
-    };
-    
-    const groupId = groupIdMap[damage];
-    if (!groupId) return;
-    
-    // Clone the marker SVG and get the specific number group
-    const markerGroup = GameData.markerSvg.querySelector(`g#${groupId}`);
-    if (!markerGroup) {
-        console.warn(`Marker group ${groupId} not found for damage ${damage}`);
-        return;
-    }
-    
-    // Create a group for this marker
-    const markerContainer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    markerContainer.setAttribute('data-marker-hex', hexIndex.toString());
-    markerContainer.setAttribute('data-marker-damage', damage.toString());
-    
-    // Clone the number group
-    const clonedGroup = markerGroup.cloneNode(true);
-    
-    // Get the viewBox of the marker SVG to understand its coordinate system
-    const markerViewBox = GameData.markerSvg.getAttribute('viewBox');
-    let markerWidth = 127.9; // Default from viewBox
-    let markerHeight = 146.5; // Default from viewBox
-    
-    if (markerViewBox) {
-        const viewBoxValues = markerViewBox.split(' ');
-        markerWidth = parseFloat(viewBoxValues[2]) || 127.9;
-        markerHeight = parseFloat(viewBoxValues[3]) || 146.5;
-    }
-    
-    // Calculate scale to fit nicely in hex (150% of hex size)
-    const scale = Math.min(bbox.width / markerWidth, bbox.height / markerHeight) * 1.5;
-    
-    // Center the marker on the hex
-    const translateX = centerX - (markerWidth * scale / 2);
-    const translateY = centerY - (markerHeight * scale / 2);
-    
-    markerContainer.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
-    
-    markerContainer.appendChild(clonedGroup);
+    // Create text element for the damage number
+    const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    damageText.setAttribute('data-marker-hex', hexIndex.toString());
+    damageText.setAttribute('data-marker-damage', damage.toString());
+    damageText.setAttribute('x', centerX.toString());
+    damageText.setAttribute('y', (topY - 10).toString()); // Slightly above the hex
+    damageText.setAttribute('fill', '#00ffff'); // Yellow color
+    damageText.setAttribute('font-size', '32');
+    damageText.setAttribute('font-weight', 'bold');
+    damageText.setAttribute('font-family', 'Arial, sans-serif');
+    damageText.setAttribute('text-anchor', 'middle'); // Center align
+    damageText.setAttribute('pointer-events', 'none'); // Don't block clicks
+    // Ensure text is not clipped - use a wider bounding box if needed
+    damageText.setAttribute('overflow', 'visible');
+    damageText.textContent = damage.toString();
     
     // Append to SVG (after covers so it's visible on top)
-    svg.appendChild(markerContainer);
+    svg.appendChild(damageText);
 }
 
 // Remove damage marker from a hex
@@ -977,9 +962,15 @@ function removeDamageMarker(hexIndex) {
     const svg = boardContainer.querySelector('svg');
     if (!svg) return;
     
-    const marker = svg.querySelector(`g[data-marker-hex="${hexIndex}"]`);
-    if (marker) {
-        marker.remove();
+    // Remove both group markers (old SVG-based) and text markers (new text-based)
+    const markerGroup = svg.querySelector(`g[data-marker-hex="${hexIndex}"]`);
+    if (markerGroup) {
+        markerGroup.remove();
+    }
+    
+    const markerText = svg.querySelector(`text[data-marker-hex="${hexIndex}"]`);
+    if (markerText) {
+        markerText.remove();
     }
 }
 
@@ -1086,7 +1077,8 @@ function addNeighborDamageSums(svg) {
                 damageSumText.setAttribute('font-size', '20');
             }
             
-            damageSumText.setAttribute('fill', '#ffff00'); // Yellow color
+            damageSumText.setAttribute('fill', '#0000ff'); // Blue color
+            damageSumText.setAttribute('fill', '#0000ff'); // Blue color
             damageSumText.setAttribute('font-weight', 'bold');
             damageSumText.setAttribute('font-family', 'Arial, sans-serif');
             damageSumText.setAttribute('pointer-events', 'none'); // Don't block clicks
@@ -1313,6 +1305,10 @@ function movePlayerToHex(hexIndex) {
     
     // Update player position
     GameState.playerHexIndex = hexIndex;
+    
+    // Make the hex the player is on transparent
+    hexPolygon.setAttribute('fill-opacity', '0');
+    hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
     
     // Handle entity in this hex (if present)
     if (cell.entity || cell.enemy) {
@@ -1661,7 +1657,7 @@ function updateZoomHex(hexIndex) {
     const sumText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     sumText.setAttribute('x', zoomCenterX.toString());
     sumText.setAttribute('y', (zoomBBox.y + 40).toString());
-    sumText.setAttribute('fill', '#ffff00');
+    sumText.setAttribute('fill', '#bbffbb'); // Blue color
     sumText.setAttribute('font-size', '36');
     sumText.setAttribute('font-weight', 'bold');
     sumText.setAttribute('font-family', 'Arial, sans-serif');
