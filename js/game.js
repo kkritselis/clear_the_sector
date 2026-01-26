@@ -629,6 +629,22 @@ function placePlayer(svg) {
     // Append player image to SVG
     svg.appendChild(playerImage);
     
+    // Make the player's starting hex transparent
+    hexPolygon.setAttribute('fill-opacity', '0');
+    hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
+    
+    // Mark the player's starting hex as revealed
+    const cell = GameState.board[playerHexIndex];
+    if (!cell) {
+        GameState.board[playerHexIndex] = {
+            revealed: true,
+            enemy: null,
+            entity: null
+        };
+    } else {
+        cell.revealed = true;
+    }
+    
     // Store player position in game state
     GameState.playerHexIndex = playerHexIndex;
     
@@ -1006,29 +1022,13 @@ function revealHexContents(hexIndex) {
         }
     });
     
-    // Make empty hexes with 0 damage transparent
-    const isEmpty = !cell || !cell.entity;
-    if (isEmpty) {
-        // Calculate neighbor damage sum
-        const neighborIndices = getNeighborIndices(hexIndex);
-        let totalDamage = 0;
-        neighborIndices.forEach(neighborIndex => {
-            const neighborCell = GameState.board[neighborIndex];
-            if (neighborCell && neighborCell.entity && neighborCell.entity.damage !== undefined) {
-                totalDamage += neighborCell.entity.damage || 0;
-            }
-        });
-        
-        // If 0 damage, make hex transparent
-        if (totalDamage === 0) {
-            const boardGroup = svg.querySelector('#board');
-            const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
-            const hexPolygon = hexPolygons[hexIndex];
-            if (hexPolygon) {
-                hexPolygon.setAttribute('fill-opacity', '0');
-                hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
-            }
-        }
+    // Make all revealed hexes transparent
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    const hexPolygon = hexPolygons[hexIndex];
+    if (hexPolygon) {
+        hexPolygon.setAttribute('fill-opacity', '0');
+        hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
     }
 }
 
@@ -1077,8 +1077,7 @@ function addNeighborDamageSums(svg) {
                 damageSumText.setAttribute('font-size', '20');
             }
             
-            damageSumText.setAttribute('fill', '#0000ff'); // Blue color
-            damageSumText.setAttribute('fill', '#0000ff'); // Blue color
+            damageSumText.setAttribute('fill', '#66ccff'); // Light blue color
             damageSumText.setAttribute('font-weight', 'bold');
             damageSumText.setAttribute('font-family', 'Arial, sans-serif');
             damageSumText.setAttribute('pointer-events', 'none'); // Don't block clicks
@@ -1088,13 +1087,8 @@ function addNeighborDamageSums(svg) {
             svg.appendChild(damageSumText);
         }
         
-        // Make empty revealed hexes with 0 damage transparent
-        const cell = GameState.board[hexIndex];
-        const isEmpty = !cell || !cell.entity;
-        if (isEmpty && cell && cell.revealed && totalDamage === 0) {
-            hexPolygon.setAttribute('fill-opacity', '0');
-            hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
-        }
+        // Make all revealed hexes transparent (will be set when revealed)
+        // This is handled in revealHexContents function
     });
     
     console.log('Added neighbor damage sums to all hexes');
@@ -1167,7 +1161,7 @@ function updateSingleHexDamageSum(svg, hexIndex) {
             damageSumText.setAttribute('font-size', '20');
         }
         
-        damageSumText.setAttribute('fill', '#ffff00'); // Yellow color
+        damageSumText.setAttribute('fill', '#66ccff'); // Light blue color
         damageSumText.setAttribute('font-weight', 'bold');
         damageSumText.setAttribute('font-family', 'Arial, sans-serif');
         damageSumText.setAttribute('pointer-events', 'none'); // Don't block clicks
@@ -1184,8 +1178,8 @@ function updateSingleHexDamageSum(svg, hexIndex) {
         svg.appendChild(damageSumText);
     }
     
-    // Make empty revealed hexes with 0 damage transparent
-    if (isEmpty && cell && cell.revealed && totalDamage === 0) {
+    // Make all revealed hexes transparent
+    if (cell && cell.revealed) {
         const boardGroup = svg.querySelector('#board');
         const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
         const hexPolygon = hexPolygons[hexIndex];
@@ -1306,7 +1300,7 @@ function movePlayerToHex(hexIndex) {
     // Update player position
     GameState.playerHexIndex = hexIndex;
     
-    // Make the hex the player is on transparent
+    // Make the hex the player is on transparent (already handled by revealHexContents, but ensure it's set)
     hexPolygon.setAttribute('fill-opacity', '0');
     hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
     
@@ -1657,7 +1651,7 @@ function updateZoomHex(hexIndex) {
     const sumText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     sumText.setAttribute('x', zoomCenterX.toString());
     sumText.setAttribute('y', (zoomBBox.y + 40).toString());
-    sumText.setAttribute('fill', '#bbffbb'); // Blue color
+    sumText.setAttribute('fill', '#66ccff'); // Light blue color
     sumText.setAttribute('font-size', '36');
     sumText.setAttribute('font-weight', 'bold');
     sumText.setAttribute('font-family', 'Arial, sans-serif');
