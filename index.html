@@ -12,7 +12,7 @@
 <body>
     <div class="scanlines"></div>
     <div class="game-container">
-        <h1 class="game-title">Clear the Sector!</h1>
+        <h1 class="game-title">Sweep the Sector!</h1>
         <main class="game-board">
             <div class="status-panel">
                 <div class="status-item shields">
@@ -36,6 +36,17 @@
                     <div class="status-info">
                         <span class="status-label">Parts</span>
                         <span class="status-value" id="parts-value">0</span>
+                    </div>
+                </div>
+                <div class="status-item cleared">
+                    <div class="status-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                    </div>
+                    <div class="status-info">
+                        <span class="status-label">Cleared</span>
+                        <span class="status-value" id="cleared-value">0%</span>
                     </div>
                 </div>
             </div>

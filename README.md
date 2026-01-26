@@ -1,4 +1,4 @@
-# Clear the Sector!
+# Sweep the Sector!
 
 A 2D strategy game inspired by Minesweeper, played on a hex grid. Navigate through a dangerous sector of space, defeating enemies and scavenging parts to survive.
 
@@ -123,12 +123,15 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 - ✅ Cover system to hide unrevealed hexes
 - ✅ Reveal system to show hex contents when clicked
 - ✅ Automatic reveal of player's starting neighbors at game launch
-- ✅ Player hex transparency when landed on
+- ✅ All revealed hexes become transparent to show background
 - ✅ Empty revealed hexes with 0 damage become transparent
 - ✅ Zoom hex display showing larger view of hovered/selected hexes
 - ✅ Background image (Space-Bkgd.jpg) displayed on game board
 - ✅ Right-click damage marker menu with yellow outlines/text
 - ✅ Cyan damage marker text displayed above marked hexes
+- ✅ Full-height game board layout (100% viewport height)
+- ✅ Rotated title on left side of board
+- ✅ Status items (shields/parts) positioned in upper left of game board
 
 ### Gameplay Systems
 - ✅ Click-to-reveal hex mechanics
@@ -137,6 +140,9 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 - ✅ Shield repair system (click shield counter when parts >= max shields)
 - ✅ Shield upgrade system (every 3rd repair increases max shields by 1)
 - ✅ Player movement to any hex (hidden or revealed)
+- ✅ Smooth player ship animation (1.5 second duration) when moving to clicked hex
+- ✅ Hex becomes transparent immediately on click to reveal contents
+- ✅ Entity removal delayed until animation completes
 - ✅ Win condition (clear all entities from the board)
 - ✅ Game over detection
 - ✅ Visual feedback for different cell states
@@ -188,7 +194,7 @@ The `sector_data.csv` file contains entity definitions with the following column
 - [ ] Save/load game state
 - [ ] Difficulty levels
 - [ ] Sound effects and music
-- [ ] Animation effects for combat and movement
+- [ ] Animation effects for combat
 - [ ] Statistics tracking (enemies defeated, parts collected, etc.)
 
 ---

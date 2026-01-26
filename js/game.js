@@ -9,6 +9,7 @@ const GameState = {
     playerHexIndex: null, // Current hex index where player is located
     clearedHexes: new Set(), // Track hexes that have been cleared of entities
     totalHexesWithEntities: 0, // Total number of hexes that contain entities (for win condition)
+    totalHexes: 0, // Total number of hexes on the board
     repairCount: 0, // Track number of repairs for upgrade system
     damageMarkers: {} // Track damage markers: hexIndex -> damage number
 };
@@ -23,6 +24,7 @@ const GameData = {
 // DOM Elements
 const shieldsDisplay = document.getElementById('shields-value');
 const partsDisplay = document.getElementById('parts-value');
+const clearedDisplay = document.getElementById('cleared-value');
 const boardContainer = document.getElementById('board-container');
 
 // Initialize the game
@@ -513,6 +515,9 @@ function setupBoardPlacements(svg) {
     // Track total hexes with entities for win condition
     GameState.totalHexesWithEntities = occupiedHexes.size;
     
+    // Store total hexes count
+    GameState.totalHexes = totalHexes;
+    
     // Add neighbor damage sums to all hexes
     addNeighborDamageSums(svg);
     
@@ -629,6 +634,11 @@ function placePlayer(svg) {
     
     // Append player image to SVG
     svg.appendChild(playerImage);
+    
+    // Apply critical glow if shields are at 0
+    if (GameState.shields <= 0) {
+        playerImage.classList.add('shields-critical');
+    }
     
     // Make the player's starting hex transparent
     hexPolygon.setAttribute('fill-opacity', '0');
@@ -1020,6 +1030,11 @@ function revealHexContents(hexIndex) {
     // This ensures the damage sum is properly positioned and visible
     updateSingleHexDamageSum(svg, hexIndex);
     
+    // Update cleared display if this hex is empty
+    if (cell && !cell.entity && !cell.enemy) {
+        updateDisplays();
+    }
+    
     // Make all revealed hexes transparent
     const boardGroup = svg.querySelector('#board');
     const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
@@ -1351,6 +1366,11 @@ function movePlayerToHex(hexIndex) {
     
     svg.appendChild(playerImage);
     
+    // Apply critical glow if shields are at 0
+    if (GameState.shields <= 0) {
+        playerImage.classList.add('shields-critical');
+    }
+    
     // Update player position immediately (for game state tracking)
     GameState.playerHexIndex = hexIndex;
     
@@ -1374,15 +1394,18 @@ function movePlayerToHex(hexIndex) {
                 // Player dies
                 playerDeath(hexPolygon, entity);
             } else {
-                // Player defeats enemy and clears the hex
-                defeatEnemy(hexPolygon, entity, hexIndex);
-                
-                // Update neighbor damage sums for all neighbors of cleared hex
-                updateNeighborDamageSums(hexIndex);
-            }
+            // Player defeats enemy and clears the hex
+            defeatEnemy(hexPolygon, entity, hexIndex);
             
-            // Check for win condition after defeating enemy
-            checkWinCondition();
+            // Update neighbor damage sums for all neighbors of cleared hex
+            updateNeighborDamageSums(hexIndex);
+            
+            // Update cleared display
+            updateDisplays();
+        }
+        
+        // Check for win condition after defeating enemy
+        checkWinCondition();
         } else {
             // Empty hex - safe movement, mark as cleared/revealed
             hexPolygon.classList.add('cleared');
@@ -1390,6 +1413,9 @@ function movePlayerToHex(hexIndex) {
             
             // Update neighbor damage sums (in case this hex had an entity before)
             updateNeighborDamageSums(hexIndex);
+            
+            // Update cleared display
+            updateDisplays();
         }
     };
     
@@ -1430,6 +1456,19 @@ function checkWinCondition() {
 
 // Show win screen
 function showWinScreen() {
+    // Calculate cleared percentage
+    let clearedCount = 0;
+    let clearedPercent = 0;
+    if (GameState.totalHexes > 0) {
+        for (let i = 0; i < GameState.board.length; i++) {
+            const cell = GameState.board[i];
+            if (cell && cell.revealed && (!cell.entity && !cell.enemy)) {
+                clearedCount++;
+            }
+        }
+        clearedPercent = Math.round((clearedCount / GameState.totalHexes) * 100);
+    }
+    
     const overlay = document.createElement('div');
     overlay.className = 'game-over-overlay';
     overlay.innerHTML = `
@@ -1438,6 +1477,7 @@ function showWinScreen() {
             <p>You have successfully cleared all enemies from the sector.</p>
             <p>Parts collected: ${GameState.parts}</p>
             <p>Final shields: ${GameState.shields}/${GameState.maxShields}</p>
+            <p>Sector cleared: ${clearedPercent}%</p>
             <button onclick="location.reload()">Play Again</button>
         </div>
     `;
@@ -1518,6 +1558,19 @@ function revealEmptyCell(hex) {
 
 // Show game over screen
 function showGameOver() {
+    // Calculate cleared percentage
+    let clearedCount = 0;
+    let clearedPercent = 0;
+    if (GameState.totalHexes > 0) {
+        for (let i = 0; i < GameState.board.length; i++) {
+            const cell = GameState.board[i];
+            if (cell && cell.revealed && (!cell.entity && !cell.enemy)) {
+                clearedCount++;
+            }
+        }
+        clearedPercent = Math.round((clearedCount / GameState.totalHexes) * 100);
+    }
+    
     const overlay = document.createElement('div');
     overlay.className = 'game-over-overlay';
     overlay.innerHTML = `
@@ -1525,6 +1578,7 @@ function showGameOver() {
             <h2>SHIP DESTROYED</h2>
             <p>Your shields were overwhelmed by enemy fire.</p>
             <p>Parts salvaged: ${GameState.parts}</p>
+            <p>Sector cleared: ${clearedPercent}%</p>
             <button onclick="location.reload()">Try Again</button>
         </div>
     `;
@@ -1536,16 +1590,65 @@ function updateDisplays() {
     shieldsDisplay.textContent = `${GameState.shields}/${GameState.maxShields}`;
     partsDisplay.textContent = GameState.parts;
     
+    // Calculate cleared hexes percentage
+    // Cleared hexes = revealed hexes that are empty (no entity)
+    let clearedCount = 0;
+    if (GameState.totalHexes > 0) {
+        for (let i = 0; i < GameState.board.length; i++) {
+            const cell = GameState.board[i];
+            if (cell && cell.revealed && (!cell.entity && !cell.enemy)) {
+                clearedCount++;
+            }
+        }
+        const clearedPercent = Math.round((clearedCount / GameState.totalHexes) * 100);
+        if (clearedDisplay) {
+            clearedDisplay.textContent = `${clearedPercent}%`;
+        }
+    } else if (clearedDisplay) {
+        clearedDisplay.textContent = '0%';
+    }
+    
     // Update shield display color based on health
     const shieldPercent = GameState.shields / GameState.maxShields;
-    if (shieldPercent <= 0.2) {
+    const playerSprite = document.querySelector('image[data-player="true"]');
+    const shieldsPanel = document.querySelector('.status-item.shields');
+    
+    if (GameState.shields <= 0) {
+        // Shields at 0 - add critical glow around player sprite and shields panel
         shieldsDisplay.classList.add('critical');
         shieldsDisplay.classList.remove('warning');
+        if (playerSprite) {
+            playerSprite.classList.add('shields-critical');
+        }
+        if (shieldsPanel) {
+            shieldsPanel.classList.add('shields-critical');
+        }
+    } else if (shieldPercent <= 0.2) {
+        shieldsDisplay.classList.add('critical');
+        shieldsDisplay.classList.remove('warning');
+        if (playerSprite) {
+            playerSprite.classList.remove('shields-critical');
+        }
+        if (shieldsPanel) {
+            shieldsPanel.classList.remove('shields-critical');
+        }
     } else if (shieldPercent <= 0.5) {
         shieldsDisplay.classList.add('warning');
         shieldsDisplay.classList.remove('critical');
+        if (playerSprite) {
+            playerSprite.classList.remove('shields-critical');
+        }
+        if (shieldsPanel) {
+            shieldsPanel.classList.remove('shields-critical');
+        }
     } else {
         shieldsDisplay.classList.remove('warning', 'critical');
+        if (playerSprite) {
+            playerSprite.classList.remove('shields-critical');
+        }
+        if (shieldsPanel) {
+            shieldsPanel.classList.remove('shields-critical');
+        }
     }
     
     // Update repair availability indicator

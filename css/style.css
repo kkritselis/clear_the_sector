@@ -46,7 +46,7 @@ body {
         rgba(0, 0, 0, 0.1) 2px,
         rgba(0, 0, 0, 0.1) 4px
     );
-    opacity: 0.3;
+    opacity: 0.32;
 }
 
 /* Background grid pattern */
@@ -157,6 +157,10 @@ body::before {
     background: linear-gradient(90deg, transparent, var(--accent-orange), transparent);
 }
 
+.status-item.cleared::before {
+    background: linear-gradient(90deg, transparent, var(--accent-green), transparent);
+}
+
 .status-item:hover {
     transform: translateY(-2px);
     border-color: var(--accent-cyan);
@@ -179,6 +183,11 @@ body::before {
 .status-item.parts .status-icon {
     color: var(--accent-orange);
     filter: drop-shadow(0 0 10px var(--accent-orange-dim));
+}
+
+.status-item.cleared .status-icon {
+    color: var(--accent-green);
+    filter: drop-shadow(var(--glow-green));
 }
 
 .status-icon svg {
@@ -215,6 +224,10 @@ body::before {
     color: var(--accent-orange);
 }
 
+.status-item.cleared .status-value {
+    color: var(--accent-green);
+}
+
 /* Game Board */
 .game-board {
     flex: 1;
@@ -231,7 +244,6 @@ body::before {
     position: relative;
     width: 100%;
     height: 100%;
-    /* background: var(--bg-panel); */
     border: 1px solid var(--border-color);
     border-radius: 0;
     padding: 30px;
@@ -242,6 +254,27 @@ body::before {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: box-shadow 0.5s ease;
+}
+
+/* Critical glow when shields at 0 */
+image[data-player="true"].shields-critical {
+    animation: criticalGlow 1.5s ease-in-out infinite;
+}
+
+.status-item.shields.shields-critical {
+    animation: criticalGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes criticalGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 3px rgba(255, 0, 0, 0.15));
+    }
+    50% {
+        filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5)) 
+                drop-shadow(0 0 20px rgba(255, 0, 0, 0.4))
+                drop-shadow(0 0 30px rgba(255, 0, 0, 0.25));
+    }
 }
 
 .board-container::before {
