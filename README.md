@@ -41,14 +41,24 @@ The game board is procedurally generated with entities placed according to speci
 
 **Damage Display**
 - Red numbers (lower left of sprites) show the damage value of each entity
-- Yellow numbers show the sum of damage from surrounding hexes:
+- Blue numbers show the sum of damage from surrounding hexes:
   - Upper right corner for hexes with entities
-  - Centered for empty hexes
+  - Centered for empty hexes (double font size)
+- Empty, revealed hexes with 0 neighbor damage become transparent to show the background
+
+**Damage Markers**
+- Right-click on hidden hexes to place a damage marker
+- A circular menu appears with numbers 1-11 and 100
+- Click a number to place it as cyan text centered above the hex
+- Right-click an already marked hex to remove the marker
+- Markers help you track suspected enemy damage values
 
 **Cover System**
-- All hexes with entities start covered (hidden) except the player's starting hex
+- All hexes start covered (hidden) except the player's starting hex
+- The 6 hexes connected to the player's starting position are automatically revealed at game start
 - Click a covered hex to reveal its contents
 - Once revealed, hexes remain visible
+- The hex the player is currently on becomes transparent (fill-opacity: 0) to show the background
 
 ### Combat
 
@@ -74,11 +84,13 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 ### Strategy Tips
 
 - Monitor your shield level carefully before clicking unknown cells
-- Use the yellow neighbor damage sums to assess risk before revealing hexes
-- Empty hexes show centered yellow numbers indicating total threat from surrounding hexes
+- Use the blue neighbor damage sums to assess risk before revealing hexes
+- Empty hexes show centered blue numbers indicating total threat from surrounding hexes
+- Use right-click damage markers to track suspected enemy locations
 - Save parts to refill shields when running low
-- Consider upgrading max shields for more survivability
+- Consider upgrading max shields for more survivability (every 3rd repair upgrades max shields)
 - The risk/reward: stronger enemies give more parts but are more dangerous
+- Hover over revealed hexes to see a zoom view with entity name and details
 
 ## Game States
 
@@ -104,19 +116,32 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 
 ### Visual Features
 - ✅ Entity sprites rendered on hexes
-- ✅ Red damage numbers displayed on entities
-- ✅ Yellow neighbor damage sum calculations:
+- ✅ Red damage numbers displayed on entities (lower left of sprites)
+- ✅ Blue neighbor damage sum calculations:
   - Upper right positioning for occupied hexes
-  - Centered positioning for empty hexes
+  - Centered positioning for empty hexes (double font size)
 - ✅ Cover system to hide unrevealed hexes
 - ✅ Reveal system to show hex contents when clicked
+- ✅ Automatic reveal of player's starting neighbors at game launch
+- ✅ Player hex transparency when landed on
+- ✅ Empty revealed hexes with 0 damage become transparent
+- ✅ Zoom hex display showing larger view of hovered/selected hexes
+- ✅ Background image (Space-Bkgd.jpg) displayed on game board
+- ✅ Right-click damage marker menu with yellow outlines/text
+- ✅ Cyan damage marker text displayed above marked hexes
 
 ### Gameplay Systems
 - ✅ Click-to-reveal hex mechanics
 - ✅ Combat system with damage calculations
 - ✅ Shield and parts tracking
+- ✅ Shield repair system (click shield counter when parts >= max shields)
+- ✅ Shield upgrade system (every 3rd repair increases max shields by 1)
+- ✅ Player movement to any hex (hidden or revealed)
+- ✅ Win condition (clear all entities from the board)
 - ✅ Game over detection
 - ✅ Visual feedback for different cell states
+- ✅ Right-click damage marker system
+- ✅ Zoom hex display (hover over revealed hexes)
 
 ## Development
 
@@ -158,14 +183,13 @@ The `sector_data.csv` file contains entity definitions with the following column
 
 ## Future Enhancements
 
-- [ ] Shield refill system using parts
-- [ ] Max shield upgrades
 - [ ] Special entity behaviors (E10 Command Core, E15 Extinction Engine states, E16 Trader Ship reveals)
 - [ ] Bonus items (B01-B03) functionality
-- [ ] Win condition
 - [ ] Save/load game state
 - [ ] Difficulty levels
 - [ ] Sound effects and music
+- [ ] Animation effects for combat and movement
+- [ ] Statistics tracking (enemies defeated, parts collected, etc.)
 
 ---
 
