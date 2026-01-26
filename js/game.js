@@ -616,7 +616,8 @@ function placePlayer(svg) {
     // Center the player image on the hex
     const imageSize = 40;
     const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
-    const imageY = bbox.y + bbox.height / 2 - imageSize / 2;
+    // Move player sprite down a little to avoid overlap with damage text
+    const imageY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
     
     playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
     playerImage.setAttribute('x', imageX.toString());
@@ -647,6 +648,10 @@ function placePlayer(svg) {
     
     // Store player position in game state
     GameState.playerHexIndex = playerHexIndex;
+    
+    // Update damage sum for player's hex now that playerHexIndex is set
+    // This ensures the damage sum is positioned correctly (moved up)
+    updateSingleHexDamageSum(svg, playerHexIndex);
     
     console.log('Player placed successfully');
 }
@@ -1011,16 +1016,9 @@ function revealHexContents(hexIndex) {
         });
     }
     
-    // Show neighbor damage sum text when revealed (only if > 0)
-    const sumTexts = svg.querySelectorAll(`text[data-hex-sum-index="${hexIndex}"]`);
-    sumTexts.forEach(text => {
-        const sumValue = parseInt(text.textContent, 10);
-        if (sumValue > 0) {
-            text.setAttribute('opacity', '1');
-        } else {
-            text.remove(); // Remove 0 damage text
-        }
-    });
+    // Update damage sum display for this hex when revealed
+    // This ensures the damage sum is properly positioned and visible
+    updateSingleHexDamageSum(svg, hexIndex);
     
     // Make all revealed hexes transparent
     const boardGroup = svg.querySelector('#board');
@@ -1065,8 +1063,12 @@ function addNeighborDamageSums(svg) {
             
             if (isEmpty) {
                 // Center the text for empty hexes
+                // Check if this is the player's hex and adjust position
+                const isPlayerHex = hexIndex === GameState.playerHexIndex;
                 damageSumText.setAttribute('x', (bbox.x + bbox.width / 2).toString());
-                damageSumText.setAttribute('y', (10 +bbox.y + bbox.height / 2).toString());
+                // Move text up if it's the player's hex to avoid overlap
+                const yOffset = isPlayerHex ? -10 : 10;
+                damageSumText.setAttribute('y', (yOffset + bbox.y + bbox.height / 2).toString());
                 damageSumText.setAttribute('text-anchor', 'middle'); // Center-align text
                 damageSumText.setAttribute('font-size', '30'); // Double font size
             } else {
@@ -1124,11 +1126,11 @@ function updateSingleHexDamageSum(svg, hexIndex) {
         }
     });
     
-    // Remove existing sum text
-    const existingSumText = svg.querySelector(`text[data-hex-sum-index="${hexIndex}"]`);
-    if (existingSumText) {
-        existingSumText.remove();
-    }
+    // Remove ALL existing sum texts for this hex (there might be duplicates)
+    const existingSumTexts = svg.querySelectorAll(`text[data-hex-sum-index="${hexIndex}"]`);
+    existingSumTexts.forEach(text => {
+        text.remove();
+    });
     
     // Only show text if there's damage to display (don't show 0 for empty hexes)
     const cell = GameState.board[hexIndex];
@@ -1149,8 +1151,12 @@ function updateSingleHexDamageSum(svg, hexIndex) {
         
         if (isEmpty) {
             // Center the text for empty hexes
+            // Check if this is the player's hex and adjust position
+            const isPlayerHex = hexIndex === GameState.playerHexIndex;
             damageSumText.setAttribute('x', (bbox.x + bbox.width / 2).toString());
-            damageSumText.setAttribute('y', (10 + bbox.y + bbox.height / 2).toString());
+            // Move text up if it's the player's hex to avoid overlap
+            const yOffset = isPlayerHex ? -10 : 10;
+            damageSumText.setAttribute('y', (yOffset + bbox.y + bbox.height / 2).toString());
             damageSumText.setAttribute('text-anchor', 'middle'); // Center-align text
             damageSumText.setAttribute('font-size', '30');
         } else {
@@ -1250,85 +1256,168 @@ function movePlayerToHex(hexIndex) {
     const cell = GameState.board[hexIndex];
     if (!cell) return;
     
-    // Reveal hex if it's hidden
-    if (!cell.revealed) {
-        cell.revealed = true;
-        const boardGroup = boardContainer.querySelector('svg #board');
-        const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : boardContainer.querySelector('svg').querySelectorAll('polygon');
-        const hexPolygon = hexPolygons[hexIndex];
-        if (hexPolygon) {
-            hexPolygon.dataset.revealed = 'true';
-        }
-        removeHexCover(hexIndex);
-        revealHexContents(hexIndex);
-    }
-    
-    // Move player sprite
+    // Move player sprite with animation
     const svg = boardContainer.querySelector('svg');
     if (!svg) return;
     
-    // Remove player from old location
-    const oldPlayerImage = svg.querySelector('image[data-player="true"]');
-    if (oldPlayerImage) {
-        oldPlayerImage.remove();
-    }
-    
-    // Get the new hex polygon
+    // Get the new hex polygon first (needed for transparency and position)
     const boardGroup = svg.querySelector('#board');
     const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
     const hexPolygon = hexPolygons[hexIndex];
     if (!hexPolygon) return;
     
+    // Reveal hex if it's hidden and make it transparent immediately
+    if (!cell.revealed) {
+        cell.revealed = true;
+        hexPolygon.dataset.revealed = 'true';
+        // Make hex transparent immediately when clicked
+        hexPolygon.setAttribute('fill-opacity', '0');
+        hexPolygon.setAttribute('stroke-opacity', '0.3');
+        removeHexCover(hexIndex);
+        revealHexContents(hexIndex);
+    } else {
+        // Hex already revealed - ensure it's transparent
+        hexPolygon.setAttribute('fill-opacity', '0');
+        hexPolygon.setAttribute('stroke-opacity', '0.3');
+    }
+    
+    // Store old player hex index before updating
+    const oldPlayerHexIndex = GameState.playerHexIndex;
+    
+    // Get old player position BEFORE removing
+    const oldPlayerImage = svg.querySelector('image[data-player="true"]');
+    let startX, startY;
+    
+    if (oldPlayerImage) {
+        // Get the actual current position of the player image
+        // If there's an animation, getBBox() will give us the current visual position
+        try {
+            const bbox = oldPlayerImage.getBBox();
+            startX = bbox.x;
+            startY = bbox.y;
+        } catch (e) {
+            // Fallback to attribute if getBBox fails
+            const currentX = oldPlayerImage.getAttribute('x');
+            const currentY = oldPlayerImage.getAttribute('y');
+            startX = parseFloat(currentX) || 0;
+            startY = parseFloat(currentY) || 0;
+        }
+        
+        // Remove old image after capturing position
+        oldPlayerImage.remove();
+    } else {
+        // No old player image - this is the first move, so start from the end position (no animation)
+        const bbox = hexPolygon.getBBox();
+        const imageSize = 40;
+        startX = bbox.x + bbox.width / 2 - imageSize / 2;
+        startY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
+    }
+    
     const bbox = hexPolygon.getBBox();
     const imageSize = 40;
-    const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
-    const imageY = bbox.y + bbox.height / 2 - imageSize / 2;
+    const endX = bbox.x + bbox.width / 2 - imageSize / 2;
+    // Move player sprite down a little to avoid overlap with damage text
+    const endY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
     
-    // Create player image at new location
+    // Create player image at starting position
     const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     playerImage.setAttribute('data-player', 'true');
     playerImage.setAttribute('data-hex-index', hexIndex.toString());
     playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
-    playerImage.setAttribute('x', imageX.toString());
-    playerImage.setAttribute('y', imageY.toString());
+    playerImage.setAttribute('x', startX.toString());
+    playerImage.setAttribute('y', startY.toString());
     playerImage.setAttribute('width', imageSize.toString());
     playerImage.setAttribute('height', imageSize.toString());
     playerImage.setAttribute('opacity', '1');
     playerImage.setAttribute('pointer-events', 'none');
+    
+    // Add animation for movement
+    const animateX = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+    animateX.setAttribute('attributeName', 'x');
+    animateX.setAttribute('from', startX.toString());
+    animateX.setAttribute('to', endX.toString());
+    animateX.setAttribute('dur', '1.5s');
+    animateX.setAttribute('fill', 'freeze');
+    
+    const animateY = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+    animateY.setAttribute('attributeName', 'y');
+    animateY.setAttribute('from', startY.toString());
+    animateY.setAttribute('to', endY.toString());
+    animateY.setAttribute('dur', '1.5s');
+    animateY.setAttribute('fill', 'freeze');
+    
+    playerImage.appendChild(animateX);
+    playerImage.appendChild(animateY);
+    
     svg.appendChild(playerImage);
     
-    // Update player position
+    // Update player position immediately (for game state tracking)
     GameState.playerHexIndex = hexIndex;
     
-    // Make the hex the player is on transparent (already handled by revealHexContents, but ensure it's set)
+    // Update damage sum for old player hex (to remove "up" positioning)
+    if (oldPlayerHexIndex !== null && oldPlayerHexIndex !== undefined && oldPlayerHexIndex !== hexIndex) {
+        updateSingleHexDamageSum(svg, oldPlayerHexIndex);
+    }
+    
+    // Make the hex the player is on transparent (ensure it's set even if already revealed)
     hexPolygon.setAttribute('fill-opacity', '0');
     hexPolygon.setAttribute('stroke-opacity', '0.3'); // Keep stroke slightly visible
     
-    // Handle entity in this hex (if present)
-    if (cell.entity || cell.enemy) {
-        const entity = cell.entity || cell.enemy;
-        const attackValue = entity.damage || 0;
-        
-        if (attackValue > GameState.shields) {
-            // Player dies
-            playerDeath(hexPolygon, entity);
-        } else {
-            // Player defeats enemy and clears the hex
-            defeatEnemy(hexPolygon, entity, hexIndex);
+    // Function to handle entity/combat after animation completes
+    const handleEntityAfterAnimation = () => {
+        // Handle entity in this hex (if present)
+        if (cell.entity || cell.enemy) {
+            const entity = cell.entity || cell.enemy;
+            const attackValue = entity.damage || 0;
             
-            // Update neighbor damage sums for all neighbors of cleared hex
+            if (attackValue > GameState.shields) {
+                // Player dies
+                playerDeath(hexPolygon, entity);
+            } else {
+                // Player defeats enemy and clears the hex
+                defeatEnemy(hexPolygon, entity, hexIndex);
+                
+                // Update neighbor damage sums for all neighbors of cleared hex
+                updateNeighborDamageSums(hexIndex);
+            }
+            
+            // Check for win condition after defeating enemy
+            checkWinCondition();
+        } else {
+            // Empty hex - safe movement, mark as cleared/revealed
+            hexPolygon.classList.add('cleared');
+            console.log('Moved to empty hex');
+            
+            // Update neighbor damage sums (in case this hex had an entity before)
             updateNeighborDamageSums(hexIndex);
         }
+    };
+    
+    // Wait for animation to complete before handling entity
+    if (oldPlayerImage) {
+        // Animation is happening - wait for it to complete (1.5 second duration)
+        // Use a flag to ensure we only handle entity once
+        let entityHandled = false;
+        const handleEntityOnce = () => {
+            if (!entityHandled) {
+                entityHandled = true;
+                handleEntityAfterAnimation();
+            }
+        };
         
-        // Check for win condition after defeating enemy
-        checkWinCondition();
+        // Listen for animation end events
+        animateX.addEventListener('endEvent', handleEntityOnce, { once: true });
+        animateY.addEventListener('endEvent', handleEntityOnce, { once: true });
+        
+        // Start the animation
+        animateX.beginElement();
+        animateY.beginElement();
+        
+        // Fallback: use setTimeout in case endEvent doesn't fire reliably
+        setTimeout(handleEntityOnce, 1500);
     } else {
-        // Empty hex - safe movement, mark as cleared/revealed
-        hexPolygon.classList.add('cleared');
-        console.log('Moved to empty hex');
-        
-        // Update neighbor damage sums (in case this hex had an entity before)
-        updateNeighborDamageSums(hexIndex);
+        // No animation (first move) - handle entity immediately
+        handleEntityAfterAnimation();
     }
 }
 
@@ -1395,6 +1484,11 @@ function defeatEnemy(hex, enemy, hexIndex) {
     
     // Visual feedback
     hex.classList.add('defeated');
+    
+    // Update damage sums for this hex and its neighbors
+    // This is important because clearing an entity changes whether the hex is empty,
+    // which affects the positioning of the damage sum text
+    updateNeighborDamageSums(hexIndex);
     
     updateDisplays();
 }
