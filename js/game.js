@@ -58,13 +58,13 @@ async function loadMarkerSVG() {
     }
 }
 
-// Set up shield repair click handler
+// Set up shield recharge click handler
 function setupShieldRepair() {
     if (!shieldsDisplay) return;
     
-    shieldsDisplay.addEventListener('click', repairShields);
+    shieldsDisplay.addEventListener('click', rechargeShields);
     shieldsDisplay.style.cursor = 'pointer';
-    shieldsDisplay.title = 'Click to repair shields (costs max shields in parts)';
+    shieldsDisplay.title = 'Click to recharge shields (costs parts based on recharge level)';
 }
 
 // Parse CSV text into array of objects
@@ -1491,10 +1491,29 @@ function defeatEnemy(hex, enemy, hexIndex) {
     // Subtract attack from shields
     GameState.shields -= attackValue;
     
-    // Scavenge parts equal to attack value
-    GameState.parts += attackValue;
+    // Scavenge parts - use part_bonus if damage is 0, otherwise use attack value
+    const partsAwarded = (attackValue === 0 && enemy.part_bonus !== undefined) ? enemy.part_bonus : attackValue;
+    GameState.parts += partsAwarded;
     
-    console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${attackValue} parts`);
+    console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${partsAwarded} parts`);
+    
+    // Check if E10 (Command Core) was defeated
+    if (enemy.id === 'E10') {
+        console.log('E10 (Command Core) defeated! Deactivating all E15 (Extinction Engine) entities');
+        deactivateAllE15();
+    }
+    
+    // Check if E16 (Trader Ship) was defeated
+    if (enemy.id === 'E16') {
+        console.log('E16 (Trader Ship) defeated! Revealing all E05 and E08 ships');
+        revealAllE05AndE08();
+    }
+    
+    // Check if E14 (Merc Ship) was defeated
+    if (enemy.id === 'E14') {
+        console.log('E14 (Merc Ship) defeated! Revealing all E01 ships');
+        revealAllE01();
+    }
     
     // Mark hex as cleared
     GameState.clearedHexes.add(hexIndex);
@@ -1531,6 +1550,141 @@ function defeatEnemy(hex, enemy, hexIndex) {
     updateNeighborDamageSums(hexIndex);
     
     updateDisplays();
+}
+
+// Deactivate all E15 (Extinction Engine) entities on the board
+function deactivateAllE15() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    // Trigger screen shake
+    const boardContainerEl = document.getElementById('board-container');
+    if (boardContainerEl) {
+        boardContainerEl.classList.add('shake');
+        setTimeout(() => {
+            boardContainerEl.classList.remove('shake');
+        }, 500);
+    }
+    
+    // Find all E15 entities on the board
+    let e15Count = 0;
+    for (let hexIndex = 0; hexIndex < GameState.board.length; hexIndex++) {
+        const cell = GameState.board[hexIndex];
+        if (cell && cell.entity && cell.entity.id === 'E15') {
+            // Deactivate E15: set damage to 0 and part_bonus to 3
+            cell.entity.damage = 0;
+            cell.entity.part_bonus = 3;
+            e15Count++;
+            
+            // Update visual damage text (only for revealed hexes)
+            if (cell.revealed) {
+                const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+                damageTexts.forEach(text => {
+                    // Check if this is a damage text (not a sum text or marker)
+                    if (!text.hasAttribute('data-hex-sum-index') && !text.hasAttribute('data-marker-hex')) {
+                        text.textContent = '0';
+                    }
+                });
+            }
+        }
+    }
+    
+    console.log(`Deactivated ${e15Count} E15 entities`);
+    
+    // Recalculate all damage sums for all hexes
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    
+    hexPolygons.forEach((hexPolygon, hexIndex) => {
+        updateSingleHexDamageSum(svg, hexIndex);
+    });
+    
+    console.log('Recalculated all damage sums after E15 deactivation');
+}
+
+// Reveal all E05 (Bulwark Class Ship) and E08 (Obliterator Class Ship) entities
+function revealAllE05AndE08() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    
+    let e05Count = 0;
+    let e08Count = 0;
+    
+    // Find all E05 and E08 entities on the board
+    for (let hexIndex = 0; hexIndex < GameState.board.length; hexIndex++) {
+        const cell = GameState.board[hexIndex];
+        if (cell && cell.entity && (cell.entity.id === 'E05' || cell.entity.id === 'E08')) {
+            // Skip if already revealed
+            if (cell.revealed) {
+                continue;
+            }
+            
+            // Mark as revealed
+            cell.revealed = true;
+            
+            // Update polygon data attribute
+            const hexPolygon = hexPolygons[hexIndex];
+            if (hexPolygon) {
+                hexPolygon.dataset.revealed = 'true';
+            }
+            
+            // Remove cover and show contents
+            removeHexCover(hexIndex);
+            revealHexContents(hexIndex);
+            
+            // Count revealed entities
+            if (cell.entity.id === 'E05') {
+                e05Count++;
+            } else if (cell.entity.id === 'E08') {
+                e08Count++;
+            }
+        }
+    }
+    
+    console.log(`Revealed ${e05Count} E05 (Bulwark Class Ship) and ${e08Count} E08 (Obliterator Class Ship) entities`);
+}
+
+// Reveal all E01 (Skirmisher Class Ship) entities
+function revealAllE01() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    
+    let e01Count = 0;
+    
+    // Find all E01 entities on the board
+    for (let hexIndex = 0; hexIndex < GameState.board.length; hexIndex++) {
+        const cell = GameState.board[hexIndex];
+        if (cell && cell.entity && cell.entity.id === 'E01') {
+            // Skip if already revealed
+            if (cell.revealed) {
+                continue;
+            }
+            
+            // Mark as revealed
+            cell.revealed = true;
+            
+            // Update polygon data attribute
+            const hexPolygon = hexPolygons[hexIndex];
+            if (hexPolygon) {
+                hexPolygon.dataset.revealed = 'true';
+            }
+            
+            // Remove cover and show contents
+            removeHexCover(hexIndex);
+            revealHexContents(hexIndex);
+            
+            // Count revealed entities
+            e01Count++;
+        }
+    }
+    
+    console.log(`Revealed ${e01Count} E01 (Skirmisher Class Ship) entities`);
 }
 
 // Player death
@@ -1588,7 +1742,10 @@ function showGameOver() {
 // Update the UI displays
 function updateDisplays() {
     shieldsDisplay.textContent = `${GameState.shields}/${GameState.maxShields}`;
-    partsDisplay.textContent = GameState.parts;
+    
+    // Display parts as "current/needed" format
+    const partsNeeded = getPartsNeededForRecharge();
+    partsDisplay.textContent = `${GameState.parts}/${partsNeeded}`;
     
     // Calculate cleared hexes percentage
     // Cleared hexes = revealed hexes that are empty (no entity)
@@ -1651,55 +1808,130 @@ function updateDisplays() {
         }
     }
     
-    // Update repair availability indicator
-    if (GameState.parts >= GameState.maxShields && GameState.shields < GameState.maxShields) {
+    // Update recharge availability indicator
+    if (GameState.parts >= partsNeeded) {
         shieldsDisplay.classList.add('repair-available');
     } else {
         shieldsDisplay.classList.remove('repair-available');
     }
 }
 
-// Repair shields to maximum
-function repairShields() {
+// Calculate parts needed for next recharge based on recharge count
+function getPartsNeededForRecharge() {
+    const rechargeCount = GameState.repairCount;
+    
+    // Pattern mapping: rechargeCount -> parts needed
+    // Based on user's pattern: 4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,25,25,25,25,25
+    const partsNeededPattern = [
+        4,  // rechargeCount 0: need 4 parts
+        5,  // rechargeCount 1: need 5 parts
+        6,  // rechargeCount 2: need 6 parts
+        7,  // rechargeCount 3: need 7 parts
+        8,  // rechargeCount 4: need 8 parts
+        9,  // rechargeCount 5: need 9 parts
+        10, // rechargeCount 6: need 10 parts
+        11, // rechargeCount 7: need 11 parts
+        12, // rechargeCount 8: need 12 parts
+        13, // rechargeCount 9: need 13 parts
+        14, // rechargeCount 10: need 14 parts
+        15, // rechargeCount 11: need 15 parts
+        16, // rechargeCount 12: need 16 parts
+        17, // rechargeCount 13: need 17 parts
+        18, // rechargeCount 14: need 18 parts
+        19, // rechargeCount 15: need 19 parts
+        20, // rechargeCount 16: need 20 parts
+        21, // rechargeCount 17: need 21 parts
+        22, // rechargeCount 18: need 22 parts
+        23, // rechargeCount 19: need 23 parts
+        24, // rechargeCount 20: need 24 parts
+        25, // rechargeCount 21: need 25 parts
+        25, // rechargeCount 22: need 25 parts (capped)
+        25, // rechargeCount 23: need 25 parts (capped)
+        25, // rechargeCount 24: need 25 parts (capped)
+        25, // rechargeCount 25: need 25 parts (capped)
+        25, // rechargeCount 26: need 25 parts (capped)
+    ];
+    
+    if (rechargeCount < partsNeededPattern.length) {
+        return partsNeededPattern[rechargeCount];
+    } else {
+        return 25; // Cap at 25 parts for rechargeCount 27+
+    }
+}
+
+// Get the shield level after next recharge
+// The pattern shows: [shield level after recharge, parts needed]
+function getShieldLevelAfterRecharge() {
+    const rechargeCount = GameState.repairCount;
+    
+    // Pattern mapping: rechargeCount -> shield level after recharge
+    // Based on user's pattern: 5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,11,11,12,12,12,12,12,12,12
+    const shieldLevelPattern = [
+        5,  // rechargeCount 0 -> 5 shields (after 1st recharge)
+        5,  // rechargeCount 1 -> 5 shields (after 2nd recharge)
+        6,  // rechargeCount 2 -> 6 shields (after 3rd recharge)
+        6,  // rechargeCount 3 -> 6 shields (after 4th recharge)
+        6,  // rechargeCount 4 -> 6 shields (after 5th recharge)
+        7,  // rechargeCount 5 -> 7 shields (after 6th recharge)
+        7,  // rechargeCount 6 -> 7 shields (after 7th recharge)
+        7,  // rechargeCount 7 -> 7 shields (after 8th recharge)
+        8,  // rechargeCount 8 -> 8 shields (after 9th recharge)
+        8,  // rechargeCount 9 -> 8 shields (after 10th recharge)
+        8,  // rechargeCount 10 -> 8 shields (after 11th recharge)
+        9,  // rechargeCount 11 -> 9 shields (after 12th recharge)
+        9,  // rechargeCount 12 -> 9 shields (after 13th recharge)
+        9,  // rechargeCount 13 -> 9 shields (after 14th recharge)
+        10, // rechargeCount 14 -> 10 shields (after 15th recharge)
+        10, // rechargeCount 15 -> 10 shields (after 16th recharge)
+        10, // rechargeCount 16 -> 10 shields (after 17th recharge)
+        11, // rechargeCount 17 -> 11 shields (after 18th recharge)
+        11, // rechargeCount 18 -> 11 shields (after 19th recharge)
+        11, // rechargeCount 19 -> 11 shields (after 20th recharge)
+        12, // rechargeCount 20 -> 12 shields (after 21st recharge)
+        12, // rechargeCount 21 -> 12 shields (after 22nd recharge)
+        12, // rechargeCount 22 -> 12 shields (after 23rd recharge)
+        12, // rechargeCount 23 -> 12 shields (after 24th recharge)
+        12, // rechargeCount 24 -> 12 shields (after 25th recharge)
+        12, // rechargeCount 25 -> 12 shields (after 26th recharge)
+        12, // rechargeCount 26 -> 12 shields (after 27th recharge)
+    ];
+    
+    if (rechargeCount < shieldLevelPattern.length) {
+        return shieldLevelPattern[rechargeCount];
+    } else {
+        return 12; // Cap at 12 shields for rechargeCount 27+
+    }
+}
+
+// Recharge shields (increase by 1)
+function rechargeShields() {
     if (!GameState.isAlive) {
-        console.log('Game over - cannot repair');
+        console.log('Game over - cannot recharge');
         return;
     }
+    
+    const partsNeeded = getPartsNeededForRecharge();
     
     // Check if player has enough parts
-    if (GameState.parts < GameState.maxShields) {
-        console.log(`Not enough parts to repair. Need ${GameState.maxShields}, have ${GameState.parts}`);
+    if (GameState.parts < partsNeeded) {
+        console.log(`Not enough parts to recharge. Need ${partsNeeded}, have ${GameState.parts}`);
         return;
     }
     
-    // Check if shields are already at max
-    if (GameState.shields >= GameState.maxShields) {
-        console.log('Shields already at maximum');
-        return;
-    }
+    // Deduct parts first
+    GameState.parts -= partsNeeded;
     
-    // Increment repair count
+    // Increment recharge count
     GameState.repairCount++;
     
-    // Check if this is the 3rd repair (upgrade)
-    const isUpgrade = GameState.repairCount % 3 === 0;
+    // Calculate new shield level after recharge
+    const newShieldLevel = getShieldLevelAfterRecharge();
     
-    if (isUpgrade) {
-        // Upgrade: increase max shields, set shields to new max, subtract old max
-        const oldMaxShields = GameState.maxShields;
-        GameState.maxShields += 1;
-        GameState.shields = GameState.maxShields;
-        GameState.parts -= oldMaxShields;
-        
-        console.log(`Shield upgrade! Max shields increased to ${GameState.maxShields}. Cost: ${oldMaxShields} parts. Remaining parts: ${GameState.parts}`);
-    } else {
-        // Normal repair: repair to current max, subtract current max
-        const repairCost = GameState.maxShields;
-        GameState.shields = GameState.maxShields;
-        GameState.parts -= repairCost;
-        
-        console.log(`Shields repaired to ${GameState.maxShields}. Cost: ${repairCost} parts. Remaining parts: ${GameState.parts}`);
-    }
+    // Set shields to new level (recharge always sets to the new level)
+    GameState.shields = newShieldLevel;
+    GameState.maxShields = newShieldLevel;
+    
+    console.log(`Shields recharged to ${GameState.shields}/${GameState.maxShields}. Cost: ${partsNeeded} parts. Remaining parts: ${GameState.parts}`);
     
     // Update displays
     updateDisplays();
