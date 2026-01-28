@@ -19,6 +19,10 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 body {
@@ -138,6 +142,7 @@ body::before {
     overflow: hidden;
     transition: all 0.3s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    touch-action: manipulation;
 }
 
 .status-item::before {
@@ -218,6 +223,37 @@ body::before {
 
 .status-item.shields .status-value {
     color: var(--accent-cyan);
+}
+
+/* Shield surge icons */
+.shield-surge-container {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+    align-items: center;
+}
+
+.shield-surge-icon {
+    width: 20px;
+    height: 20px;
+    min-width: 44px;
+    min-height: 44px;
+    cursor: pointer;
+    opacity: 1;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    touch-action: manipulation;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shield-surge-icon:hover {
+    opacity: 0.7;
+    transform: scale(1.1);
+}
+
+.shield-surge-icon svg {
+    filter: drop-shadow(0 0 4px var(--accent-cyan));
 }
 
 .status-item.parts .status-value {
@@ -314,6 +350,11 @@ image[data-player="true"].shields-critical {
     stroke-width: 0.5;
     transition: all 0.2s ease;
     cursor: pointer;
+    touch-action: manipulation;
+}
+
+#board-container svg polygon {
+    touch-action: manipulation;
 }
 
 #board-container svg path:hover {

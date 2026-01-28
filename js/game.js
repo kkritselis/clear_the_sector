@@ -11,7 +11,8 @@ const GameState = {
     totalHexesWithEntities: 0, // Total number of hexes that contain entities (for win condition)
     totalHexes: 0, // Total number of hexes on the board
     repairCount: 0, // Track number of repairs for upgrade system
-    damageMarkers: {} // Track damage markers: hexIndex -> damage number
+    damageMarkers: {}, // Track damage markers: hexIndex -> damage number
+    shieldSurgeCount: 0 // Track shield surge items in inventory
 };
 
 // Game data loaded from CSV
@@ -58,13 +59,147 @@ async function loadMarkerSVG() {
     }
 }
 
+// Helper function to add both click and touch event handlers
+function addTouchAndClickHandler(element, handler, options = {}) {
+    let touchStartTime = 0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchMoved = false;
+    
+    // Click handler
+    element.addEventListener('click', (e) => {
+        if (!touchMoved) {
+            handler(e);
+        }
+    });
+    
+    // Touch handlers
+    element.addEventListener('touchstart', (e) => {
+        touchStartTime = Date.now();
+        touchMoved = false;
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        e.preventDefault(); // Prevent default touch behavior
+    }, { passive: false });
+    
+    element.addEventListener('touchend', (e) => {
+        const touchEndTime = Date.now();
+        const touch = e.changedTouches[0];
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        const deltaTime = touchEndTime - touchStartTime;
+        
+        // Only trigger if touch didn't move much and was quick (tap, not drag)
+        if (!touchMoved && deltaX < 10 && deltaY < 10 && deltaTime < 300) {
+            // Create a synthetic event object
+            const syntheticEvent = {
+                target: e.target,
+                currentTarget: e.currentTarget,
+                preventDefault: () => e.preventDefault(),
+                stopPropagation: () => e.stopPropagation()
+            };
+            handler(syntheticEvent);
+        }
+        e.preventDefault();
+    }, { passive: false });
+    
+    element.addEventListener('touchmove', () => {
+        touchMoved = true;
+    });
+}
+
+// Helper function for touch and hold (right-click equivalent)
+function addTouchAndHoldHandler(element, handler, holdDuration = 500) {
+    let holdTimer = null;
+    let touchMoved = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    
+    element.addEventListener('touchstart', (e) => {
+        touchMoved = false;
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        
+        holdTimer = setTimeout(() => {
+            if (!touchMoved) {
+                const syntheticEvent = {
+                    target: e.target,
+                    currentTarget: e.currentTarget,
+                    preventDefault: () => e.preventDefault(),
+                    stopPropagation: () => e.stopPropagation()
+                };
+                handler(syntheticEvent);
+            }
+        }, holdDuration);
+    });
+    
+    element.addEventListener('touchend', () => {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+    });
+    
+    element.addEventListener('touchmove', (e) => {
+        const touch = e.touches[0];
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        if (deltaX > 10 || deltaY > 10) {
+            touchMoved = true;
+            if (holdTimer) {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            }
+        }
+    });
+    
+    element.addEventListener('touchcancel', () => {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+    });
+}
+
+// Helper function for touch hover (touchstart/touchend for zoom)
+function addTouchHoverHandler(element, enterHandler, leaveHandler) {
+    let hoverTimer = null;
+    
+    element.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (hoverTimer) clearTimeout(hoverTimer);
+        hoverTimer = setTimeout(() => {
+            enterHandler();
+        }, 100);
+    }, { passive: false });
+    
+    element.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (hoverTimer) {
+            clearTimeout(hoverTimer);
+            hoverTimer = null;
+        }
+        leaveHandler();
+    }, { passive: false });
+    
+    element.addEventListener('touchcancel', () => {
+        if (hoverTimer) {
+            clearTimeout(hoverTimer);
+            hoverTimer = null;
+        }
+        leaveHandler();
+    });
+}
+
 // Set up shield recharge click handler
 function setupShieldRepair() {
     if (!shieldsDisplay) return;
     
-    shieldsDisplay.addEventListener('click', rechargeShields);
+    addTouchAndClickHandler(shieldsDisplay, rechargeShields);
     shieldsDisplay.style.cursor = 'pointer';
-    shieldsDisplay.title = 'Click to recharge shields (costs parts based on recharge level)';
+    shieldsDisplay.title = 'Click or tap to recharge shields (costs parts based on recharge level)';
 }
 
 // Parse CSV text into array of objects
@@ -722,12 +857,17 @@ function coverHexes(svg) {
         coverPolygon.setAttribute('pointer-events', 'all');
         coverPolygon.style.cursor = 'pointer';
         
-        // Add click handler to cover so it can be clicked to reveal
-        coverPolygon.addEventListener('click', handleHexClick);
+        // Add click and touch handler to cover so it can be clicked to reveal
+        addTouchAndClickHandler(coverPolygon, handleHexClick);
         
         // Add right-click handler for damage markers (only on hidden hexes)
         coverPolygon.addEventListener('contextmenu', (e) => {
             e.preventDefault();
+            handleRightClick(e, hexIndex);
+        });
+        
+        // Add touch and hold handler for damage markers (mobile equivalent of right-click)
+        addTouchAndHoldHandler(coverPolygon, (e) => {
             handleRightClick(e, hexIndex);
         });
         
@@ -889,7 +1029,7 @@ function showDamageMarkerMenu(event, hexIndex) {
         const numberGroup = clonedSvg.querySelector(`g#${groupId}`);
         if (numberGroup) {
             numberGroup.style.cursor = 'pointer';
-            numberGroup.addEventListener('click', (e) => {
+            const clickHandler = (e) => {
                 e.stopPropagation();
                 // Use currentTarget to get the group the listener is attached to
                 // This ensures we get the correct group even if clicking on child elements
@@ -899,7 +1039,8 @@ function showDamageMarkerMenu(event, hexIndex) {
                     selectDamageMarker(hexIndex, damage);
                     hideDamageMarkerMenu();
                 }
-            });
+            };
+            addTouchAndClickHandler(numberGroup, clickHandler);
         }
     });
     
@@ -917,11 +1058,11 @@ function showDamageMarkerMenu(event, hexIndex) {
         }
     };
     
-    // Listen for clicks on covers to close menu
+    // Listen for clicks and touches on covers to close menu
     setTimeout(() => {
         const covers = svg.querySelectorAll('polygon[data-hex-cover]');
         covers.forEach(cover => {
-            cover.addEventListener('click', closeHandler, { once: true });
+            addTouchAndClickHandler(cover, closeHandler);
         });
     }, 100);
 }
@@ -1222,11 +1363,18 @@ function setupBoardInteractions(svg) {
     hexPolygons.forEach((polygon, index) => {
         polygon.dataset.hexIndex = index;
         polygon.dataset.revealed = 'false';
-        polygon.addEventListener('click', handleHexClick);
+        addTouchAndClickHandler(polygon, handleHexClick);
         
-        // Add hover handlers for zoom hex
+        // Add hover handlers for zoom hex (mouse)
         polygon.addEventListener('mouseenter', () => updateZoomHex(index));
         polygon.addEventListener('mouseleave', () => clearZoomHex());
+        
+        // Add touch hover handlers for zoom hex (touch)
+        addTouchHoverHandler(
+            polygon,
+            () => updateZoomHex(index),
+            () => clearZoomHex()
+        );
         
         // Initialize board cell data
         GameState.board[index] = {
@@ -1515,6 +1663,12 @@ function defeatEnemy(hex, enemy, hexIndex) {
         revealAllE01();
     }
     
+    // Check if B03 (Shield Surge) was captured
+    if (enemy.id === 'B03' && enemy.shield_surge === 1) {
+        GameState.shieldSurgeCount++;
+        console.log(`B03 (Shield Surge) captured! Shield surge count: ${GameState.shieldSurgeCount}`);
+    }
+    
     // Mark hex as cleared
     GameState.clearedHexes.add(hexIndex);
     
@@ -1739,9 +1893,122 @@ function showGameOver() {
     document.body.appendChild(overlay);
 }
 
+// Update shield surge icons in the shield display
+function updateShieldSurgeIcons() {
+    const shieldsPanel = document.querySelector('.status-item.shields');
+    if (!shieldsPanel) return;
+    
+    // Remove existing shield surge container
+    const existingContainer = shieldsPanel.querySelector('.shield-surge-container');
+    if (existingContainer) {
+        existingContainer.remove();
+    }
+    
+    // Only create container if there are shield surges
+    if (GameState.shieldSurgeCount > 0) {
+        // Create container for shield surge icons
+        const surgeContainer = document.createElement('div');
+        surgeContainer.className = 'shield-surge-container';
+        surgeContainer.style.display = 'flex';
+        surgeContainer.style.gap = '4px';
+        surgeContainer.style.marginLeft = '8px';
+        surgeContainer.style.alignItems = 'center';
+        
+        // Create shield surge icons
+        for (let i = 0; i < GameState.shieldSurgeCount; i++) {
+            const surgeIcon = document.createElement('div');
+            surgeIcon.className = 'shield-surge-icon';
+            surgeIcon.setAttribute('data-surge-index', i.toString());
+            surgeIcon.style.width = '20px';
+            surgeIcon.style.height = '20px';
+            surgeIcon.style.cursor = 'pointer';
+            surgeIcon.style.opacity = '1';
+            surgeIcon.style.transition = 'opacity 0.2s ease';
+            surgeIcon.title = 'Click to use shield surge (maxes out shields)';
+            
+            // Create filled shield SVG icon
+            const shieldSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            shieldSvg.setAttribute('viewBox', '0 0 24 24');
+            shieldSvg.setAttribute('width', '20');
+            shieldSvg.setAttribute('height', '20');
+            shieldSvg.style.display = 'block';
+            
+            // Filled shield path
+            const shieldPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            shieldPath.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
+            shieldPath.setAttribute('fill', '#00d4ff');
+            shieldPath.setAttribute('stroke', '#00d4ff');
+            shieldPath.setAttribute('stroke-width', '1');
+            shieldSvg.appendChild(shieldPath);
+            
+            surgeIcon.appendChild(shieldSvg);
+            
+            // Add click and touch handler
+            const surgeClickHandler = (e) => {
+                e.stopPropagation(); // Prevent triggering shield recharge
+                useShieldSurge(i);
+            };
+            addTouchAndClickHandler(surgeIcon, surgeClickHandler);
+            
+            // Add hover effect (mouse)
+            surgeIcon.addEventListener('mouseenter', () => {
+                surgeIcon.style.opacity = '0.7';
+            });
+            surgeIcon.addEventListener('mouseleave', () => {
+                surgeIcon.style.opacity = '1';
+            });
+            
+            // Add touch hover effect
+            surgeIcon.addEventListener('touchstart', () => {
+                surgeIcon.style.opacity = '0.7';
+            }, { passive: true });
+            surgeIcon.addEventListener('touchend', () => {
+                surgeIcon.style.opacity = '1';
+            }, { passive: true });
+            
+            surgeContainer.appendChild(surgeIcon);
+        }
+        
+        // Insert after status-info
+        const statusInfo = shieldsPanel.querySelector('.status-info');
+        if (statusInfo) {
+            statusInfo.parentNode.insertBefore(surgeContainer, statusInfo.nextSibling);
+        } else {
+            shieldsPanel.appendChild(surgeContainer);
+        }
+    }
+}
+
+// Use a shield surge to max out shields
+function useShieldSurge(index) {
+    if (!GameState.isAlive) {
+        console.log('Game over - cannot use shield surge');
+        return;
+    }
+    
+    if (GameState.shieldSurgeCount <= 0) {
+        console.log('No shield surges available');
+        return;
+    }
+    
+    // Max out shields
+    GameState.shields = GameState.maxShields;
+    
+    // Remove one shield surge
+    GameState.shieldSurgeCount--;
+    
+    console.log(`Shield surge used! Shields maxed to ${GameState.shields}/${GameState.maxShields}. Remaining surges: ${GameState.shieldSurgeCount}`);
+    
+    // Update displays
+    updateDisplays();
+}
+
 // Update the UI displays
 function updateDisplays() {
     shieldsDisplay.textContent = `${GameState.shields}/${GameState.maxShields}`;
+    
+    // Update shield surge icons
+    updateShieldSurgeIcons();
     
     // Display parts as "current/needed" format
     const partsNeeded = getPartsNeededForRecharge();
