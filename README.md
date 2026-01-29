@@ -93,6 +93,10 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 
 #### Special Entities
 
+**E11 (Local Warlord)**
+- When defeated, reveals the location of E10 (Command Core)
+- Revealed hexes become transparent and show their contents
+
 **E10 (Command Core)**
 - When defeated, triggers a screen shake effect
 - Deactivates all E15 (Extinction Engine) entities on the board
@@ -112,6 +116,11 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 **E14 (Merc Ship)**
 - When defeated, reveals the locations of all E01 (Skirmisher Class Ship) entities
 - Revealed hexes become transparent and show their contents
+
+**E09 (Harbinger Class Ship)**
+- When defeated, grants a shield surge to your inventory
+- Shield surges appear as filled shield icons next to the shield display
+- Click/tap a shield surge icon to instantly max out shields (no parts cost)
 
 **B03 (Shield Surge)**
 - When defeated/captured, adds a shield surge to your inventory
@@ -144,9 +153,10 @@ The shield recharge system uses a progressive cost pattern:
 - Empty hexes show centered blue numbers indicating total threat from surrounding hexes
 - Use right-click/touch-and-hold damage markers to track suspected enemy locations
 - Save parts to recharge shields when running low
-- Defeat E10 early to deactivate dangerous E15 entities
+- Defeat E11 first to reveal E10's location, then defeat E10 to deactivate dangerous E15 entities
 - Use E16 and E14 strategically to reveal enemy locations
-- Collect B03 shield surges for emergency shield restoration
+- Defeat E09 ships to gain shield surges for emergency shield restoration
+- Collect B03 shield surges for additional shield restoration options
 - The risk/reward: stronger enemies give more parts but are more dangerous
 - Hover/touch revealed hexes to see a zoom view with entity name and details
 
@@ -212,6 +222,7 @@ The shield recharge system uses a progressive cost pattern:
 - ✅ Zoom hex display (hover/touch over revealed hexes)
 - ✅ Screen shake effect when E10 is defeated
 - ✅ E15 deactivation system (damage 0, parts 3 when inactive)
+- ✅ E11 defeat reveals E10 location
 - ✅ E16 defeat reveals E05 and E08 locations
 - ✅ E14 defeat reveals E01 locations
 - ✅ Touch/mobile support for all interactions

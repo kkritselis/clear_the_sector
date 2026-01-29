@@ -203,45 +203,87 @@ function setupShieldRepair() {
 }
 
 // Parse CSV text into array of objects
+// Handles commas within DESC and ALERT_TEXT fields
 function parseCSV(csvText) {
     const lines = csvText.trim().split('\n');
     if (lines.length < 2) return [];
     
-    // Parse header row
+    // Parse header row - headers don't contain commas, so simple split works
     const headers = lines[0].split(',').map(h => h.trim());
+    const numHeaders = headers.length;
     
     // Parse data rows
     const entities = [];
     for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (!line || line.split(',').every(cell => !cell.trim())) continue; // Skip empty rows
+        if (!line) continue; // Skip empty rows
         
-        const values = line.split(',').map(v => v.trim());
-        if (values.length < headers.length) continue; // Skip incomplete rows
+        // Parse CSV line handling commas within DESC and ALERT_TEXT fields
+        // Structure: CODE,NAME,DAMAGE,COUNT,SPRITE_NAME,SHIELD_BONUS,PART_BONUS,SHIELD_SURGE,DESC,ALERT_TEXT
+        // First 8 fields don't contain commas, DESC and ALERT_TEXT may contain commas
+        const values = [];
+        const parts = line.split(',');
+        
+        // First 8 fields are guaranteed to not have commas
+        for (let j = 0; j < 8 && j < parts.length; j++) {
+            values.push(parts[j].trim());
+        }
+        
+        // Remaining parts (if any) need to be handled for DESC and ALERT_TEXT
+        if (parts.length > 8) {
+            // Join all parts from index 8 onwards, then split by last comma
+            const remaining = parts.slice(8).join(',');
+            
+            // Find the last comma to separate DESC and ALERT_TEXT
+            const lastCommaIndex = remaining.lastIndexOf(',');
+            
+            if (lastCommaIndex >= 0) {
+                // Split DESC and ALERT_TEXT at the last comma
+                values.push(remaining.substring(0, lastCommaIndex).trim());
+                values.push(remaining.substring(lastCommaIndex + 1).trim());
+            } else {
+                // No comma found, treat entire remaining as DESC
+                values.push(remaining.trim());
+                values.push(''); // Empty ALERT_TEXT
+            }
+        } else if (parts.length === 8) {
+            // Exactly 8 fields, add empty DESC and ALERT_TEXT
+            values.push('');
+            values.push('');
+        }
+        
+        // Ensure we have enough values
+        while (values.length < numHeaders) {
+            values.push('');
+        }
         
         // Create entity object
         const entity = {};
         
-        // First column is the ID (no header name)
+        // First column is the ID (CODE column)
         if (values[0]) {
-            entity.id = values[0];
+            entity.id = values[0].trim();
         }
         
-        // Map remaining columns to headers (skip first empty header)
-        headers.forEach((header, index) => {
-            if (index === 0) return; // Skip first empty header column
+        // Map columns to headers (skip CODE column at index 0)
+        for (let index = 1; index < numHeaders; index++) {
+            const header = headers[index];
             const value = values[index] || '';
+            const trimmedValue = value.trim();
+            
             // Convert numeric fields
             if (['DAMAGE', 'COUNT', 'SHIELD_BONUS', 'PART_BONUS', 'SHIELD_SURGE'].includes(header)) {
-                entity[header.toLowerCase()] = value ? parseInt(value, 10) : 0;
+                entity[header.toLowerCase()] = trimmedValue ? parseInt(trimmedValue, 10) : 0;
             } else {
-                entity[header.toLowerCase()] = value;
+                entity[header.toLowerCase()] = trimmedValue;
             }
-        });
+        }
         
         // Only add entities with a valid ID and sprite
         if (entity.id && entity.sprite_name) {
             entities.push(entity);
+        } else {
+            console.warn(`Skipping entity with missing ID or sprite_name:`, entity);
         }
     }
     
@@ -464,8 +506,8 @@ function getNeighborIndices(hexIndex) {
         const dy = centerY - targetCenterY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // Hex width is approximately 83 pixels (41.6 * 2), so neighbors should be around 80-90 pixels away
-        if (distance < 100) {
+        // Hex width is approximately 94 pixels for the new larger hexes, so neighbors should be around 100-110 pixels away
+        if (distance < 120) {
             distances.push({ index, distance });
         }
     });
@@ -527,8 +569,8 @@ function placeEntityOnHex(hexIndex, entity) {
             const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
             imageElement.setAttribute('data-hex-index', hexIndex.toString());
             
-            // Center the image on the hex
-            const imageSize = 40;
+            // Center the image on the hex (scaled up for larger hexes)
+            const imageSize = 50;
             const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
             const imageY = bbox.y + bbox.height / 2 - imageSize / 2;
             
@@ -543,14 +585,14 @@ function placeEntityOnHex(hexIndex, entity) {
             // Append image to SVG
             svg.appendChild(imageElement);
             
-            // Add damage text if entity has damage
-            if (entity.damage !== undefined && entity.damage !== null) {
+            // Add damage text if entity has damage > 0
+            if (entity.damage !== undefined && entity.damage !== null && entity.damage > 0) {
                 const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                 damageText.setAttribute('data-hex-index', hexIndex.toString());
-                damageText.setAttribute('x', (imageX - 8).toString()); // Lower left of sprite (more offset)
-                damageText.setAttribute('y', (imageY + imageSize + 8).toString());
+                damageText.setAttribute('x', (imageX - 10).toString()); // Lower left of sprite (more offset)
+                damageText.setAttribute('y', (imageY + imageSize + 10).toString());
                 damageText.setAttribute('fill', '#ff0000'); // Red color
-                damageText.setAttribute('font-size', '24');
+                damageText.setAttribute('font-size', '28');
                 damageText.setAttribute('font-weight', 'bold');
                 damageText.setAttribute('font-family', 'Arial, sans-serif');
                 damageText.setAttribute('pointer-events', 'none'); // Don't block clicks
@@ -566,18 +608,20 @@ function placeEntityOnHex(hexIndex, entity) {
 // Set up board with initial placements
 function setupBoardPlacements(svg) {
     // Find E11 (Local Warlord) by ID
-    const e11 = GameData.entities.find(e => e.id === 'E11');
+    const e11 = GameData.entities.find(e => e.id && e.id.trim() === 'E11');
     if (!e11) {
         console.warn('E11 (Local Warlord) not found in CSV data');
         console.log('Available entities:', GameData.entities.map(e => e.id));
+        console.log('All entities:', GameData.entities);
         return;
     }
     
     // Find E12 (Dominion Fighter Ship) by ID
-    const e12 = GameData.entities.find(e => e.id === 'E12');
+    const e12 = GameData.entities.find(e => e.id && e.id.trim() === 'E12');
     if (!e12) {
         console.warn('E12 (Dominion Fighter Ship) not found in CSV data');
         console.log('Available entities:', GameData.entities.map(e => e.id));
+        console.log('All entities:', GameData.entities);
         return;
     }
     
@@ -753,11 +797,11 @@ function placePlayer(svg) {
     playerImage.setAttribute('data-player', 'true');
     playerImage.setAttribute('data-hex-index', playerHexIndex.toString());
     
-    // Center the player image on the hex
-    const imageSize = 40;
+    // Center the player image on the hex (scaled up for larger hexes)
+    const imageSize = 50;
     const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
     // Move player sprite down a little to avoid overlap with damage text
-    const imageY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
+    const imageY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
     
     playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
     playerImage.setAttribute('x', imageX.toString());
@@ -1107,16 +1151,16 @@ function placeDamageMarkerText(hexIndex, damage) {
     
     const bbox = hexPolygon.getBBox();
     const centerX = bbox.x + bbox.width / 2;
-    const topY = bbox.y + 70; // Top of hex
+    const topY = bbox.y + 80; // Top of hex (adjusted for larger hexes)
     
     // Create text element for the damage number
     const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     damageText.setAttribute('data-marker-hex', hexIndex.toString());
     damageText.setAttribute('data-marker-damage', damage.toString());
     damageText.setAttribute('x', centerX.toString());
-    damageText.setAttribute('y', (topY - 10).toString()); // Slightly above the hex
-    damageText.setAttribute('fill', '#00ffff'); // Yellow color
-    damageText.setAttribute('font-size', '32');
+    damageText.setAttribute('y', (topY - 12).toString()); // Slightly above the hex
+    damageText.setAttribute('fill', '#00ffff'); // Cyan color
+    damageText.setAttribute('font-size', '38');
     damageText.setAttribute('font-weight', 'bold');
     damageText.setAttribute('font-family', 'Arial, sans-serif');
     damageText.setAttribute('text-anchor', 'middle'); // Center align
@@ -1159,11 +1203,14 @@ function revealHexContents(hexIndex) {
         img.setAttribute('opacity', '1');
     });
     
-    // Show damage text for this hex (if entity exists)
-    if (cell && cell.entity) {
+    // Show damage text for this hex (if entity exists and has damage > 0)
+    if (cell && cell.entity && cell.entity.damage > 0) {
         const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
         damageTexts.forEach(text => {
-            text.setAttribute('opacity', '1');
+            // Only show damage text, not sum text or markers
+            if (!text.hasAttribute('data-hex-sum-index') && !text.hasAttribute('data-marker-hex')) {
+                text.setAttribute('opacity', '1');
+            }
         });
     }
     
@@ -1223,16 +1270,16 @@ function addNeighborDamageSums(svg) {
                 const isPlayerHex = hexIndex === GameState.playerHexIndex;
                 damageSumText.setAttribute('x', (bbox.x + bbox.width / 2).toString());
                 // Move text up if it's the player's hex to avoid overlap
-                const yOffset = isPlayerHex ? -10 : 10;
+                const yOffset = isPlayerHex ? -12 : 12;
                 damageSumText.setAttribute('y', (yOffset + bbox.y + bbox.height / 2).toString());
                 damageSumText.setAttribute('text-anchor', 'middle'); // Center-align text
-                damageSumText.setAttribute('font-size', '30'); // Double font size
+                damageSumText.setAttribute('font-size', '36'); // Scaled up for larger hexes
             } else {
                 // Upper right corner for hexes with entities
-                damageSumText.setAttribute('x', (bbox.x + bbox.width - 15).toString());
-                damageSumText.setAttribute('y', (bbox.y + 30).toString());
+                damageSumText.setAttribute('x', (bbox.x + bbox.width - 18).toString());
+                damageSumText.setAttribute('y', (bbox.y + 35).toString());
                 damageSumText.setAttribute('text-anchor', 'end'); // Right-align text
-                damageSumText.setAttribute('font-size', '20');
+                damageSumText.setAttribute('font-size', '24');
             }
             
             damageSumText.setAttribute('fill', '#66ccff'); // Light blue color
@@ -1292,8 +1339,11 @@ function updateSingleHexDamageSum(svg, hexIndex) {
     const cell = GameState.board[hexIndex];
     const isEmpty = !cell || !cell.entity;
     
-    // Only show sum if damage > 0 (don't show 0 for empty revealed hexes)
-    if (totalDamage > 0) {
+    // Don't show damage sum for revealed hexes that contain entities
+    // Only show for: unrevealed hexes OR revealed empty hexes
+    const shouldShowSum = totalDamage > 0 && (!cell || !cell.revealed || isEmpty);
+    
+    if (shouldShowSum) {
         const boardGroup = svg.querySelector('#board');
         const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
         const hexPolygon = hexPolygons[hexIndex];
@@ -1311,16 +1361,16 @@ function updateSingleHexDamageSum(svg, hexIndex) {
             const isPlayerHex = hexIndex === GameState.playerHexIndex;
             damageSumText.setAttribute('x', (bbox.x + bbox.width / 2).toString());
             // Move text up if it's the player's hex to avoid overlap
-            const yOffset = isPlayerHex ? -10 : 10;
+            const yOffset = isPlayerHex ? -12 : 12;
             damageSumText.setAttribute('y', (yOffset + bbox.y + bbox.height / 2).toString());
             damageSumText.setAttribute('text-anchor', 'middle'); // Center-align text
-            damageSumText.setAttribute('font-size', '30');
+            damageSumText.setAttribute('font-size', '36');
         } else {
-            // Upper right corner for hexes with entities
-            damageSumText.setAttribute('x', (bbox.x + bbox.width - 15).toString());
-            damageSumText.setAttribute('y', (bbox.y + 30).toString());
+            // Upper right corner for hexes with entities (only shown when not revealed)
+            damageSumText.setAttribute('x', (bbox.x + bbox.width - 18).toString());
+            damageSumText.setAttribute('y', (bbox.y + 35).toString());
             damageSumText.setAttribute('text-anchor', 'end'); // Right-align text
-            damageSumText.setAttribute('font-size', '20');
+            damageSumText.setAttribute('font-size', '24');
         }
         
         damageSumText.setAttribute('fill', '#66ccff'); // Light blue color
@@ -1329,8 +1379,10 @@ function updateSingleHexDamageSum(svg, hexIndex) {
         damageSumText.setAttribute('pointer-events', 'none'); // Don't block clicks
         damageSumText.textContent = totalDamage.toString();
         
-        // Only show if hex is revealed
-        if (cell && cell.revealed) {
+        // Show opacity based on reveal state
+        // Revealed empty hexes: show (opacity 1)
+        // Unrevealed hexes: hide (opacity 0) - will be shown when revealed if empty
+        if (cell && cell.revealed && isEmpty) {
             damageSumText.setAttribute('opacity', '1');
         } else {
             damageSumText.setAttribute('opacity', '0');
@@ -1471,16 +1523,16 @@ function movePlayerToHex(hexIndex) {
     } else {
         // No old player image - this is the first move, so start from the end position (no animation)
         const bbox = hexPolygon.getBBox();
-        const imageSize = 40;
+        const imageSize = 50;
         startX = bbox.x + bbox.width / 2 - imageSize / 2;
-        startY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
+        startY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
     }
     
     const bbox = hexPolygon.getBBox();
-    const imageSize = 40;
+    const imageSize = 50;
     const endX = bbox.x + bbox.width / 2 - imageSize / 2;
     // Move player sprite down a little to avoid overlap with damage text
-    const endY = bbox.y + bbox.height / 2 - imageSize / 2 + 15;
+    const endY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
     
     // Create player image at starting position
     const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
@@ -1645,6 +1697,12 @@ function defeatEnemy(hex, enemy, hexIndex) {
     
     console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${partsAwarded} parts`);
     
+    // Check if E11 (Local Warlord) was defeated
+    if (enemy.id === 'E11') {
+        console.log('E11 (Local Warlord) defeated! Revealing E10 (Command Core) location');
+        revealAllE10();
+    }
+    
     // Check if E10 (Command Core) was defeated
     if (enemy.id === 'E10') {
         console.log('E10 (Command Core) defeated! Deactivating all E15 (Extinction Engine) entities');
@@ -1667,6 +1725,12 @@ function defeatEnemy(hex, enemy, hexIndex) {
     if (enemy.id === 'B03' && enemy.shield_surge === 1) {
         GameState.shieldSurgeCount++;
         console.log(`B03 (Shield Surge) captured! Shield surge count: ${GameState.shieldSurgeCount}`);
+    }
+    
+    // Check if E09 (Harbinger Class Ship) was defeated
+    if (enemy.id === 'E09') {
+        GameState.shieldSurgeCount++;
+        console.log(`E09 (Harbinger Class Ship) defeated! Shield surge gained. Shield surge count: ${GameState.shieldSurgeCount}`);
     }
     
     // Mark hex as cleared
@@ -1731,12 +1795,21 @@ function deactivateAllE15() {
             e15Count++;
             
             // Update visual damage text (only for revealed hexes)
+            // Remove damage text since damage is now 0
             if (cell.revealed) {
                 const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
                 damageTexts.forEach(text => {
                     // Check if this is a damage text (not a sum text or marker)
                     if (!text.hasAttribute('data-hex-sum-index') && !text.hasAttribute('data-marker-hex')) {
-                        text.textContent = '0';
+                        text.remove(); // Remove damage text when damage is 0
+                    }
+                });
+            } else {
+                // For unrevealed hexes, remove damage text if it exists
+                const damageTexts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+                damageTexts.forEach(text => {
+                    if (!text.hasAttribute('data-hex-sum-index') && !text.hasAttribute('data-marker-hex')) {
+                        text.remove(); // Remove damage text when damage is 0
                     }
                 });
             }
@@ -1754,6 +1827,46 @@ function deactivateAllE15() {
     });
     
     console.log('Recalculated all damage sums after E15 deactivation');
+}
+
+// Reveal all E10 (Command Core) entities
+function revealAllE10() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    
+    let e10Count = 0;
+    
+    // Find all E10 entities on the board
+    for (let hexIndex = 0; hexIndex < GameState.board.length; hexIndex++) {
+        const cell = GameState.board[hexIndex];
+        if (cell && cell.entity && cell.entity.id === 'E10') {
+            // Skip if already revealed
+            if (cell.revealed) {
+                continue;
+            }
+            
+            // Mark as revealed
+            cell.revealed = true;
+            
+            // Update polygon data attribute
+            const hexPolygon = hexPolygons[hexIndex];
+            if (hexPolygon) {
+                hexPolygon.dataset.revealed = 'true';
+            }
+            
+            // Remove cover and show contents
+            removeHexCover(hexIndex);
+            revealHexContents(hexIndex);
+            
+            // Count revealed entities
+            e10Count++;
+        }
+    }
+    
+    console.log(`Revealed ${e10Count} E10 (Command Core) entities`);
 }
 
 // Reveal all E05 (Bulwark Class Ship) and E08 (Obliterator Class Ship) entities
@@ -2293,8 +2406,8 @@ function updateZoomHex(hexIndex) {
         entityImage.setAttribute('opacity', cell.revealed ? '1' : '0.5'); // Dim if not revealed
         zoomGroup.appendChild(entityImage);
         
-        // Display damage value
-        if (cell.entity.damage !== undefined && cell.entity.damage !== null) {
+        // Display damage value (only if > 0)
+        if (cell.entity.damage !== undefined && cell.entity.damage !== null && cell.entity.damage > 0) {
             const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             damageText.setAttribute('x', (zoomCenterX - 60).toString());
             damageText.setAttribute('y', (zoomCenterY + imageSize / 2 + 30).toString());
