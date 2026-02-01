@@ -190,6 +190,10 @@ body::before {
     filter: drop-shadow(0 0 10px var(--accent-orange-dim));
 }
 
+.status-item.parts .status-icon img {
+    filter: drop-shadow(0 0 10px var(--accent-orange-dim));
+}
+
 .status-item.cleared .status-icon {
     color: var(--accent-green);
     filter: drop-shadow(var(--glow-green));

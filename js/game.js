@@ -34,6 +34,7 @@ async function init() {
         await loadCSVData();
         await preloadImages();
         await loadMarkerSVG();
+        await loadPartsIcon();
         await loadGameBoard();
         setupShieldRepair();
         updateDisplays();
@@ -56,6 +57,66 @@ async function loadMarkerSVG() {
         console.log('Marker SVG loaded');
     } catch (error) {
         console.error('Error loading marker SVG:', error);
+    }
+}
+
+// Load and style the parts icon SVG
+async function loadPartsIcon() {
+    try {
+        const partsIconContainer = document.querySelector('.status-item.parts .status-icon');
+        if (!partsIconContainer) {
+            console.warn('Parts icon container not found');
+            return;
+        }
+        
+        const response = await fetch('img/parts.svg');
+        const svgText = await response.text();
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+        const svgElement = svgDoc.documentElement;
+        
+        // Get the accent orange color from CSS
+        const style = getComputedStyle(document.documentElement);
+        const accentOrange = style.getPropertyValue('--accent-orange').trim();
+        
+        // Apply the accent color to all path elements (they don't have fill attributes by default)
+        const pathElements = svgElement.querySelectorAll('path');
+        pathElements.forEach(path => {
+            // Explicitly set fill to accent orange
+            path.setAttribute('fill', accentOrange);
+        });
+        
+        // Also apply to other shape elements (circle, rect, polygon, etc.)
+        const shapeElements = svgElement.querySelectorAll('circle, rect, polygon, ellipse, line');
+        shapeElements.forEach(shape => {
+            const currentFill = shape.getAttribute('fill');
+            if (currentFill !== 'none') {
+                shape.setAttribute('fill', accentOrange);
+            }
+        });
+        
+        // Apply to all other elements that might have fill
+        const allElements = svgElement.querySelectorAll('*');
+        allElements.forEach(element => {
+            // Skip if fill is explicitly 'none'
+            const currentFill = element.getAttribute('fill');
+            if (currentFill && currentFill !== 'none') {
+                element.setAttribute('fill', accentOrange);
+            }
+        });
+        
+        // Ensure SVG fits the container (32x32px)
+        svgElement.setAttribute('width', '100%');
+        svgElement.setAttribute('height', '100%');
+        svgElement.style.display = 'block';
+        
+        // Clear the container and append the styled SVG
+        partsIconContainer.innerHTML = '';
+        partsIconContainer.appendChild(svgElement);
+        
+        console.log('Parts icon SVG loaded and styled');
+    } catch (error) {
+        console.error('Error loading parts icon SVG:', error);
     }
 }
 
@@ -753,27 +814,46 @@ function revealPlayerNeighbors(svg) {
     console.log('Player starting area revealed');
 }
 
-// Place the player sprite on a random empty hex
+// Check if a hex is on the outer ring (has fewer than 6 neighbors)
+function isOuterRingHex(hexIndex) {
+    const neighbors = getNeighborIndices(hexIndex);
+    return neighbors.length < 6;
+}
+
+// Place the player sprite on a random empty hex (not on outer ring)
 function placePlayer(svg) {
     const boardGroup = svg.querySelector('#board');
     const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
     const totalHexes = hexPolygons.length;
     
-    // Find all empty hexes (hexes without entities)
+    // Find all empty hexes (hexes without entities) that are NOT on the outer ring
     const emptyHexes = [];
     for (let i = 0; i < totalHexes; i++) {
         const cell = GameState.board[i];
         if (!cell || !cell.entity) {
-            emptyHexes.push(i);
+            // Check if this hex is NOT on the outer ring
+            if (!isOuterRingHex(i)) {
+                emptyHexes.push(i);
+            }
         }
     }
     
     if (emptyHexes.length === 0) {
-        console.warn('No empty hexes available for player placement');
-        return;
+        console.warn('No empty hexes available for player placement (excluding outer ring)');
+        // Fallback: allow outer ring placement if no inner hexes available
+        for (let i = 0; i < totalHexes; i++) {
+            const cell = GameState.board[i];
+            if (!cell || !cell.entity) {
+                emptyHexes.push(i);
+            }
+        }
+        if (emptyHexes.length === 0) {
+            console.error('No empty hexes available for player placement at all');
+            return;
+        }
     }
     
-    // Pick a random empty hex
+    // Pick a random empty hex (preferring inner hexes)
     const randomIndex = Math.floor(Math.random() * emptyHexes.length);
     const playerHexIndex = emptyHexes[randomIndex];
     
@@ -842,7 +922,48 @@ function placePlayer(svg) {
     // This ensures the damage sum is positioned correctly (moved up)
     updateSingleHexDamageSum(svg, playerHexIndex);
     
+    // Place a shield surge (B03) in one of the player's adjacent hexes
+    placeShieldSurgeNearPlayer(svg, playerHexIndex);
+    
     console.log('Player placed successfully');
+}
+
+// Place a shield surge (B03) in one of the player's adjacent hexes
+function placeShieldSurgeNearPlayer(svg, playerHexIndex) {
+    // Find B03 entity
+    const b03 = GameData.entities.find(e => e.id === 'B03');
+    if (!b03) {
+        console.warn('B03 (Shield Surge) not found in CSV data');
+        return;
+    }
+    
+    // Get all neighbors of the player's hex
+    const neighborIndices = getNeighborIndices(playerHexIndex);
+    
+    if (neighborIndices.length === 0) {
+        console.warn('No neighbors found for player hex, cannot place shield surge');
+        return;
+    }
+    
+    // Filter to only empty neighbors
+    const emptyNeighbors = neighborIndices.filter(hexIndex => {
+        const cell = GameState.board[hexIndex];
+        return !cell || !cell.entity;
+    });
+    
+    if (emptyNeighbors.length === 0) {
+        console.warn('No empty neighbors for player hex, cannot place shield surge');
+        return;
+    }
+    
+    // Pick a random empty neighbor
+    const randomNeighborIndex = Math.floor(Math.random() * emptyNeighbors.length);
+    const surgeHexIndex = emptyNeighbors[randomNeighborIndex];
+    
+    // Place B03 shield surge entity
+    placeEntityOnHex(surgeHexIndex, b03);
+    
+    console.log(`Placed shield surge (B03) at hex index ${surgeHexIndex} (adjacent to player)`);
 }
 
 // Cover all hexes to hide their contents (except player's starting hex)
