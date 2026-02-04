@@ -12,7 +12,9 @@ const GameState = {
     totalHexes: 0, // Total number of hexes on the board
     repairCount: 0, // Track number of repairs for upgrade system
     damageMarkers: {}, // Track damage markers: hexIndex -> damage number
-    shieldSurgeCount: 0 // Track shield surge items in inventory
+    shieldSurgeCount: 0, // Track shield surge items in inventory
+    movementQueue: [], // Queue of hex indices to move to
+    isMoving: false // Flag to track if player is currently moving
 };
 
 // Game data loaded from CSV
@@ -451,12 +453,176 @@ async function loadGameBoard() {
                 svg.insertBefore(rect, svg.firstChild.nextSibling); // Insert after defs
             }
             
+            // Set up the leader image in the zoom hex with clipping mask
+            setupLeaderImage(svg, defs);
+            
             setupBoardInteractions(svg);
         }
     } catch (error) {
         console.error('Error loading game board:', error);
         boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game board</p>';
     }
+}
+
+// Track alert timeout for cleanup
+let alertTimeout = null;
+
+// Set up the leader image in the zoom hex with clipping mask
+function setupLeaderImage(svg, defs) {
+    // Get the zoom hex polygon
+    const zoomHex = svg.querySelector('#zoom');
+    if (!zoomHex) {
+        console.warn('Zoom hex not found');
+        return;
+    }
+    
+    // Get the points attribute from the zoom hex
+    const pointsAttr = zoomHex.getAttribute('points');
+    if (!pointsAttr) {
+        console.warn('Zoom hex has no points attribute');
+        return;
+    }
+    
+    // Create a clipPath element using the zoom hex shape
+    const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+    clipPath.setAttribute('id', 'zoom-hex-clip');
+    
+    // Create a polygon inside the clipPath with the same shape as the zoom hex
+    const clipPolygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    clipPolygon.setAttribute('points', pointsAttr);
+    clipPath.appendChild(clipPolygon);
+    
+    // Add the clipPath to defs
+    defs.appendChild(clipPath);
+    
+    // Get the bounding box of the zoom hex
+    const bbox = zoomHex.getBBox();
+    
+    // Create an image element for the leader
+    const leaderImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    leaderImage.setAttribute('id', 'leader-image');
+    leaderImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/leader_off.png');
+    
+    // Position the image to cover the entire zoom hex
+    // Use the bounding box to center and size the image
+    leaderImage.setAttribute('x', bbox.x.toString());
+    leaderImage.setAttribute('y', bbox.y.toString());
+    leaderImage.setAttribute('width', bbox.width.toString());
+    leaderImage.setAttribute('height', bbox.height.toString());
+    leaderImage.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+    
+    // Apply the clip path to the image
+    leaderImage.setAttribute('clip-path', 'url(#zoom-hex-clip)');
+    
+    // Insert the image after the zoom hex so it appears on top of the hex fill
+    // but the hex polygon provides the visual boundary via clipping
+    zoomHex.parentNode.insertBefore(leaderImage, zoomHex.nextSibling);
+    
+    console.log('Leader image set up with hex clipping mask');
+}
+
+// Show leader alert with text message
+function showLeaderAlert(alertText) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    // Clear any existing timeout
+    if (alertTimeout) {
+        clearTimeout(alertTimeout);
+        alertTimeout = null;
+    }
+    
+    // Swap leader image to chat gif
+    const leaderImage = svg.querySelector('#leader-image');
+    if (leaderImage) {
+        leaderImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/leader_chat.gif');
+        console.log('Leader image swapped to chat gif');
+    } else {
+        console.warn('Leader image element not found');
+    }
+    
+    // Get the text rectangle for positioning
+    const textRect = svg.querySelector('#text');
+    if (!textRect) {
+        console.warn('Text rectangle not found');
+        return;
+    }
+    
+    const rectBBox = textRect.getBBox();
+    
+    // Remove any existing alert text
+    const existingText = svg.querySelector('#alert-text-group');
+    if (existingText) {
+        existingText.remove();
+    }
+    
+    // Create a group for the alert text
+    const textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    textGroup.setAttribute('id', 'alert-text-group');
+    
+    // Create foreignObject to allow text wrapping
+    const foreignObject = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+    foreignObject.setAttribute('x', (rectBBox.x + 15).toString());
+    foreignObject.setAttribute('y', (rectBBox.y + 10).toString());
+    foreignObject.setAttribute('width', (rectBBox.width - 30).toString());
+    foreignObject.setAttribute('height', (rectBBox.height - 20).toString());
+    
+    // Create a div inside foreignObject for the text (using XHTML namespace)
+    const textDiv = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+    textDiv.style.width = '100%';
+    textDiv.style.height = '100%';
+    textDiv.style.display = 'flex';
+    textDiv.style.alignItems = 'center';
+    textDiv.style.justifyContent = 'center';
+    textDiv.style.textAlign = 'center';
+    textDiv.style.color = '#00d4ff';
+    textDiv.style.fontSize = '24px';
+    textDiv.style.fontFamily = 'Arial, sans-serif';
+    textDiv.style.fontWeight = 'bold';
+    textDiv.style.lineHeight = '1.3';
+    textDiv.style.padding = '5px';
+    textDiv.style.boxSizing = 'border-box';
+    textDiv.style.overflow = 'hidden';
+    textDiv.textContent = alertText;
+    
+    foreignObject.appendChild(textDiv);
+    textGroup.appendChild(foreignObject);
+    svg.appendChild(textGroup);
+    
+    console.log('Alert text group added to SVG, leader image swapped');
+    
+    console.log('Leader alert shown:', alertText);
+    
+    // Set timeout to hide alert after 5 seconds
+    alertTimeout = setTimeout(() => {
+        hideLeaderAlert();
+    }, 5000);
+}
+
+// Hide leader alert and restore default state
+function hideLeaderAlert() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    // Clear timeout if it exists
+    if (alertTimeout) {
+        clearTimeout(alertTimeout);
+        alertTimeout = null;
+    }
+    
+    // Swap leader image back to off state
+    const leaderImage = svg.querySelector('#leader-image');
+    if (leaderImage) {
+        leaderImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/leader_off.png');
+    }
+    
+    // Remove alert text
+    const textGroup = svg.querySelector('#alert-text-group');
+    if (textGroup) {
+        textGroup.remove();
+    }
+    
+    console.log('Leader alert hidden');
 }
 
 // Hex coordinate system - stores hex coordinates for each index
@@ -1538,17 +1704,6 @@ function setupBoardInteractions(svg) {
         polygon.dataset.revealed = 'false';
         addTouchAndClickHandler(polygon, handleHexClick);
         
-        // Add hover handlers for zoom hex (mouse)
-        polygon.addEventListener('mouseenter', () => updateZoomHex(index));
-        polygon.addEventListener('mouseleave', () => clearZoomHex());
-        
-        // Add touch hover handlers for zoom hex (touch)
-        addTouchHoverHandler(
-            polygon,
-            () => updateZoomHex(index),
-            () => clearZoomHex()
-        );
-        
         // Initialize board cell data
         GameState.board[index] = {
             revealed: false,
@@ -1560,12 +1715,9 @@ function setupBoardInteractions(svg) {
     
     // Set up initial board placements
     setupBoardPlacements(svg);
-    
-    // Initialize zoom hex
-    initializeZoomHex(svg);
 }
 
-// Handle clicking on a hex cell - now handles movement
+// Handle clicking on a hex cell - now handles movement with queue
 function handleHexClick(event) {
     if (!GameState.isAlive) {
         console.log('Game over - cannot interact');
@@ -1582,9 +1734,85 @@ function handleHexClick(event) {
         return;
     }
     
-    // Allow movement to any hex (with entities or empty)
-    // Move player to this hex
-    movePlayerToHex(index);
+    // Don't add duplicate destinations to queue
+    const lastInQueue = GameState.movementQueue[GameState.movementQueue.length - 1];
+    if (lastInQueue === index) {
+        console.log('Hex already queued');
+        return;
+    }
+    
+    // Visual feedback - flash the hex
+    applyHexClickEffect(index);
+    
+    // Add hex to movement queue
+    GameState.movementQueue.push(index);
+    console.log(`Added hex ${index} to movement queue. Queue length: ${GameState.movementQueue.length}`);
+    
+    // If not currently moving, start processing the queue
+    if (!GameState.isMoving) {
+        processMovementQueue();
+    }
+}
+
+// Apply visual click feedback to a hex
+function applyHexClickEffect(hexIndex) {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    // Try to find the hex cover first (for unrevealed hexes)
+    let targetHex = svg.querySelector(`polygon[data-hex-cover="${hexIndex}"]`);
+    
+    // If no cover, find the original hex polygon
+    if (!targetHex) {
+        const boardGroup = svg.querySelector('#board');
+        const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+        targetHex = hexPolygons[hexIndex];
+    }
+    
+    if (targetHex) {
+        // Remove class first in case it's already animating
+        targetHex.classList.remove('hex-clicked');
+        
+        // Force reflow to restart animation
+        void targetHex.offsetWidth;
+        
+        // Add the click animation class
+        targetHex.classList.add('hex-clicked');
+        
+        // Remove class after animation completes
+        setTimeout(() => {
+            targetHex.classList.remove('hex-clicked');
+        }, 300);
+    }
+}
+
+// Process the next movement in the queue
+function processMovementQueue() {
+    // Check if there are moves to process
+    if (GameState.movementQueue.length === 0) {
+        GameState.isMoving = false;
+        return;
+    }
+    
+    // Check if game is still active
+    if (!GameState.isAlive) {
+        GameState.movementQueue = [];
+        GameState.isMoving = false;
+        return;
+    }
+    
+    // Get the next hex from the queue
+    const nextHexIndex = GameState.movementQueue.shift();
+    
+    // Skip if it's the current position (player may have moved there already)
+    if (nextHexIndex === GameState.playerHexIndex) {
+        processMovementQueue();
+        return;
+    }
+    
+    // Start moving
+    GameState.isMoving = true;
+    movePlayerToHex(nextHexIndex);
 }
 
 // Move player to a hex
@@ -1712,21 +1940,24 @@ function movePlayerToHex(hexIndex) {
             const attackValue = entity.damage || 0;
             
             if (attackValue > GameState.shields) {
-                // Player dies
+                // Player dies - clear the movement queue
+                GameState.movementQueue = [];
+                GameState.isMoving = false;
                 playerDeath(hexPolygon, entity);
+                return; // Don't process more movements
             } else {
-            // Player defeats enemy and clears the hex
-            defeatEnemy(hexPolygon, entity, hexIndex);
-            
-            // Update neighbor damage sums for all neighbors of cleared hex
-            updateNeighborDamageSums(hexIndex);
-            
-            // Update cleared display
-            updateDisplays();
-        }
+                // Player defeats enemy and clears the hex
+                defeatEnemy(hexPolygon, entity, hexIndex);
+                
+                // Update neighbor damage sums for all neighbors of cleared hex
+                updateNeighborDamageSums(hexIndex);
+                
+                // Update cleared display
+                updateDisplays();
+            }
         
-        // Check for win condition after defeating enemy
-        checkWinCondition();
+            // Check for win condition after defeating enemy
+            checkWinCondition();
         } else {
             // Empty hex - safe movement, mark as cleared/revealed
             hexPolygon.classList.add('cleared');
@@ -1738,6 +1969,9 @@ function movePlayerToHex(hexIndex) {
             // Update cleared display
             updateDisplays();
         }
+        
+        // Process next movement in queue
+        processMovementQueue();
     };
     
     // Wait for animation to complete before handling entity
@@ -1817,6 +2051,12 @@ function defeatEnemy(hex, enemy, hexIndex) {
     GameState.parts += partsAwarded;
     
     console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${partsAwarded} parts`);
+    
+    // Check for ALERT_TEXT and show leader alert if present
+    if (enemy.alert_text && enemy.alert_text.trim() !== '') {
+        console.log('Entity has alert_text:', enemy.alert_text);
+        showLeaderAlert(enemy.alert_text);
+    }
     
     // Check if E11 (Local Warlord) was defeated
     if (enemy.id === 'E11') {
@@ -2454,168 +2694,6 @@ function upgradeMaxShields(amount) {
     updateDisplays();
 }
 
-// Initialize the zoom hex display area
-function initializeZoomHex(svg) {
-    const zoomHex = svg.querySelector('#zoom');
-    if (!zoomHex) {
-        console.warn('Zoom hex not found in SVG');
-        return;
-    }
-    
-    // Create a group inside the zoom hex for content
-    let zoomGroup = svg.querySelector('g#zoom-content');
-    if (!zoomGroup) {
-        zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        zoomGroup.setAttribute('id', 'zoom-content');
-        svg.appendChild(zoomGroup);
-    }
-    
-    // Initially hide zoom hex content
-    clearZoomHex();
-}
-
-// Update zoom hex to show contents of hovered hex
-function updateZoomHex(hexIndex) {
-    const svg = boardContainer.querySelector('svg');
-    if (!svg) return;
-    
-    const zoomHex = svg.querySelector('#zoom');
-    if (!zoomHex) return;
-    
-    let zoomGroup = svg.querySelector('g#zoom-content');
-    if (!zoomGroup) {
-        zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        zoomGroup.setAttribute('id', 'zoom-content');
-        svg.appendChild(zoomGroup);
-    }
-    
-    // Clear existing zoom content
-    zoomGroup.innerHTML = '';
-    
-    const cell = GameState.board[hexIndex];
-    if (!cell) return;
-    
-    // Get bounding box of zoom hex
-    const zoomBBox = zoomHex.getBBox();
-    const zoomCenterX = zoomBBox.x + zoomBBox.width / 2;
-    const zoomCenterY = zoomBBox.y + zoomBBox.height / 2;
-    const imageSize = 120; // Larger size for zoom
-    
-    // Display entity name and sprite if present
-    if (cell.entity && cell.entity.sprite_name) {
-        // Display entity name above sprite
-        if (cell.entity.name) {
-            const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            nameText.setAttribute('x', zoomCenterX.toString());
-            nameText.setAttribute('y', (zoomCenterY - imageSize / 2 - 20).toString());
-            nameText.setAttribute('fill', '#ffffff');
-            nameText.setAttribute('font-size', '28');
-            nameText.setAttribute('font-weight', 'bold');
-            nameText.setAttribute('font-family', 'Arial, sans-serif');
-            nameText.setAttribute('text-anchor', 'middle');
-            nameText.setAttribute('opacity', cell.revealed ? '1' : '0.5');
-            nameText.textContent = cell.entity.name;
-            zoomGroup.appendChild(nameText);
-        }
-        
-        const entityImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        entityImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', `img/${cell.entity.sprite_name}`);
-        entityImage.setAttribute('x', (zoomCenterX - imageSize / 2).toString());
-        entityImage.setAttribute('y', (zoomCenterY - imageSize / 2).toString());
-        entityImage.setAttribute('width', imageSize.toString());
-        entityImage.setAttribute('height', imageSize.toString());
-        entityImage.setAttribute('opacity', cell.revealed ? '1' : '0.5'); // Dim if not revealed
-        zoomGroup.appendChild(entityImage);
-        
-        // Display damage value (only if > 0)
-        if (cell.entity.damage !== undefined && cell.entity.damage !== null && cell.entity.damage > 0) {
-            const damageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            damageText.setAttribute('x', (zoomCenterX - 60).toString());
-            damageText.setAttribute('y', (zoomCenterY + imageSize / 2 + 30).toString());
-            damageText.setAttribute('fill', '#ff0000');
-            damageText.setAttribute('font-size', '48');
-            damageText.setAttribute('font-weight', 'bold');
-            damageText.setAttribute('font-family', 'Arial, sans-serif');
-            damageText.setAttribute('opacity', cell.revealed ? '1' : '0.5');
-            damageText.textContent = cell.entity.damage.toString();
-            zoomGroup.appendChild(damageText);
-        }
-    }
-    
-    // Display player sprite if this is the player's hex
-    if (hexIndex === GameState.playerHexIndex) {
-        // Display "Player" name above sprite
-        const playerNameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        playerNameText.setAttribute('x', zoomCenterX.toString());
-        playerNameText.setAttribute('y', (zoomCenterY - imageSize / 2 - 20).toString());
-        playerNameText.setAttribute('fill', '#ffffff');
-        playerNameText.setAttribute('font-size', '28');
-        playerNameText.setAttribute('font-weight', 'bold');
-        playerNameText.setAttribute('font-family', 'Arial, sans-serif');
-        playerNameText.setAttribute('text-anchor', 'middle');
-        playerNameText.setAttribute('opacity', '1');
-        playerNameText.textContent = 'Player';
-        zoomGroup.appendChild(playerNameText);
-        
-        const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
-        playerImage.setAttribute('x', (zoomCenterX - imageSize / 2).toString());
-        playerImage.setAttribute('y', (zoomCenterY - imageSize / 2).toString());
-        playerImage.setAttribute('width', imageSize.toString());
-        playerImage.setAttribute('height', imageSize.toString());
-        playerImage.setAttribute('opacity', '1');
-        zoomGroup.appendChild(playerImage);
-    }
-    
-    // Calculate and display neighbor damage sum (always show, even for empty hexes)
-    const neighborIndices = getNeighborIndices(hexIndex);
-    let totalDamage = 0;
-    neighborIndices.forEach(neighborIndex => {
-        const neighborCell = GameState.board[neighborIndex];
-        if (neighborCell && neighborCell.entity && neighborCell.entity.damage !== undefined) {
-            totalDamage += neighborCell.entity.damage || 0;
-        }
-    });
-    
-    // Show neighbor damage sum even if 0, or if > 0
-    const sumText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    sumText.setAttribute('x', zoomCenterX.toString());
-    sumText.setAttribute('y', (zoomBBox.y + 40).toString());
-    sumText.setAttribute('fill', '#66ccff'); // Light blue color
-    sumText.setAttribute('font-size', '36');
-    sumText.setAttribute('font-weight', 'bold');
-    sumText.setAttribute('font-family', 'Arial, sans-serif');
-    sumText.setAttribute('text-anchor', 'middle');
-    sumText.setAttribute('opacity', cell.revealed ? '1' : '0.5');
-    sumText.textContent = totalDamage.toString();
-    zoomGroup.appendChild(sumText);
-    
-    // If empty hex, show message or indicator
-    if (!cell.entity && !cell.enemy && hexIndex !== GameState.playerHexIndex) {
-        const emptyText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        emptyText.setAttribute('x', zoomCenterX.toString());
-        emptyText.setAttribute('y', (zoomCenterY + 20).toString());
-        emptyText.setAttribute('fill', '#ffffff');
-        emptyText.setAttribute('font-size', '24');
-        emptyText.setAttribute('font-weight', 'bold');
-        emptyText.setAttribute('font-family', 'Arial, sans-serif');
-        emptyText.setAttribute('text-anchor', 'middle');
-        emptyText.setAttribute('opacity', cell.revealed ? '1' : '0.5');
-        emptyText.textContent = 'Empty';
-        zoomGroup.appendChild(emptyText);
-    }
-}
-
-// Clear zoom hex display
-function clearZoomHex() {
-    const svg = boardContainer.querySelector('svg');
-    if (!svg) return;
-    
-    const zoomGroup = svg.querySelector('g#zoom-content');
-    if (zoomGroup) {
-        zoomGroup.innerHTML = '';
-    }
-}
 
 // Start the game when DOM is ready
 document.addEventListener('DOMContentLoaded', init);

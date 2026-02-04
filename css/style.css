@@ -439,6 +439,25 @@ image[data-player="true"].shields-critical {
     animation: screenShake 0.5s ease-in-out;
 }
 
+/* Hex click feedback animation */
+@keyframes hexClick {
+    0% { 
+        fill: #00d4ff;
+        fill-opacity: 0.6;
+    }
+    50% {
+        fill: #00d4ff;
+        fill-opacity: 0.3;
+    }
+    100% { 
+        fill-opacity: 0;
+    }
+}
+
+polygon.hex-clicked {
+    animation: hexClick 0.3s ease-out forwards;
+}
+
 /* Game Over Overlay */
 .game-over-overlay {
     position: fixed;
