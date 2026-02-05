@@ -127,6 +127,16 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 - Shield surges appear as filled shield icons next to the shield display
 - Click/tap a shield surge icon to instantly max out shields (no parts cost)
 
+### Leader Alerts
+
+When you defeat certain entities that have ALERT_TEXT defined in the CSV data, the leader character will react:
+- The leader image in the big hex switches from `leader_off.png` to `leader_chat.gif`
+- An alert message appears in the rounded rectangle below the leader
+- The alert displays for 5 seconds before the leader returns to the off state
+
+Entities with alert messages include:
+- E09 (Harbinger Class Ship), E10 (Command Core), E11 (Local Warlord), B02 (Rebel Stash), B03 (Shield Surge)
+
 ### Shield Recharge System
 
 The shield recharge system uses a progressive cost pattern:
@@ -158,7 +168,8 @@ The shield recharge system uses a progressive cost pattern:
 - Defeat E09 ships to gain shield surges for emergency shield restoration
 - Collect B03 shield surges for additional shield restoration options
 - The risk/reward: stronger enemies give more parts but are more dangerous
-- Hover/touch revealed hexes to see a zoom view with entity name and details
+- Queue multiple moves by clicking several hexes - the ship will visit each in sequence
+- Watch the leader alerts for important story information when defeating key enemies
 
 ## Game States
 
@@ -193,7 +204,9 @@ The shield recharge system uses a progressive cost pattern:
 - ✅ Automatic reveal of player's starting neighbors at game launch
 - ✅ All revealed hexes become transparent to show background
 - ✅ Empty revealed hexes with 0 damage become transparent
-- ✅ Zoom hex display showing larger view of hovered/touched hexes
+- ✅ Leader image in big hex with hexagonal clipping mask
+- ✅ Leader alert system with animated chat gif and text messages
+- ✅ Hex click feedback animation (cyan flash on click)
 - ✅ Background image (Space-Bkgd.jpg) displayed on game board
 - ✅ Right-click/touch-and-hold damage marker menu with yellow outlines/text
 - ✅ Cyan damage marker text displayed above marked hexes
@@ -212,14 +225,16 @@ The shield recharge system uses a progressive cost pattern:
 - ✅ Shield surge inventory system (B03 items)
 - ✅ Shield surge usage (instant max shields, no parts cost)
 - ✅ Player movement to any hex (hidden or revealed)
+- ✅ Movement queue system - click multiple hexes to queue sequential moves
 - ✅ Smooth player ship animation (1.5 second duration) when moving to clicked hex
+- ✅ Hex click visual feedback (cyan flash animation)
 - ✅ Hex becomes transparent immediately on click to reveal contents
 - ✅ Entity removal delayed until animation completes
 - ✅ Win condition (clear all entities from the board)
 - ✅ Game over detection
 - ✅ Visual feedback for different cell states
 - ✅ Right-click/touch-and-hold damage marker system
-- ✅ Zoom hex display (hover/touch over revealed hexes)
+- ✅ Leader alert system (5 second alerts with animated leader)
 - ✅ Screen shake effect when E10 is defeated
 - ✅ E15 deactivation system (damage 0, parts 3 when inactive)
 - ✅ E11 defeat reveals E10 location
@@ -240,24 +255,27 @@ clear_the_sector/
 ├── img/
 │   ├── sector_cleared.svg  # Hex grid game board
 │   ├── player.png          # Player sprite
+│   ├── leader_off.png      # Leader idle state image
+│   ├── leader_chat.gif     # Leader talking animation
 │   └── [entity sprites]    # Entity sprites (E01-E16, B01-B03)
 ├── data/
-│   └── sector_data.csv     # Entity data (damage, count, sprites, etc.)
+│   └── sector_data.csv     # Entity data (damage, count, sprites, alerts, etc.)
 └── README.md
 ```
 
 ### Data Format
 
 The `sector_data.csv` file contains entity definitions with the following columns:
-- **ID** - Unique identifier (E01-E16 for enemies, B01-B03 for bonuses)
+- **CODE** - Unique identifier (E01-E16 for enemies, B01-B03 for bonuses)
 - **NAME** - Entity name
 - **DAMAGE** - Attack/damage value
 - **COUNT** - Number of instances to place on the board
 - **SPRITE_NAME** - Image filename (e.g., E01.png)
 - **SHIELD_BONUS** - Shield bonus value
 - **PART_BONUS** - Parts bonus value
-- **SHIELD_SURGE** - Shield surge value
+- **SHIELD_SURGE** - Shield surge value (1 = grants shield surge when defeated)
 - **DESC** - Description text
+- **ALERT_TEXT** - Message displayed by the leader when this entity is defeated (optional)
 
 ### Tech Stack
 - HTML5
