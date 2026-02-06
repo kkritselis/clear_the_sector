@@ -11,7 +11,33 @@
 </head>
 <body>
     <div class="scanlines"></div>
-    <div class="game-container">
+    
+    <!-- Title Screen -->
+    <div class="title-screen" id="title-screen">
+        <div class="title-content">
+            <img src="img/title.png" alt="Clear the Sector" class="title-logo" id="title-logo">
+            <div class="title-buttons">
+                <div class="button-group left-buttons">
+                    <button class="title-button" id="btn-c" data-button="c">
+                        <img src="img/C.png" alt="C">
+                    </button>
+                    <button class="title-button" id="btn-s" data-button="s">
+                        <img src="img/S.png" alt="S">
+                    </button>
+                </div>
+                <div class="button-group right-buttons">
+                    <button class="title-button" id="btn-l" data-button="l">
+                        <img src="img/L.png" alt="L">
+                    </button>
+                    <button class="title-button" id="btn-lna" data-button="lna">
+                        <img src="img/LnA.png" alt="LnA">
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="game-container" id="game-container">
         <h1 class="game-title">Sweep the Sector!</h1>
         <main class="game-board">
             <div class="status-panel">

@@ -32,20 +32,76 @@ const boardContainer = document.getElementById('board-container');
 
 // Initialize the game
 async function init() {
-    try {
-        await loadCSVData();
-        await preloadImages();
-        await loadMarkerSVG();
-        await loadPartsIcon();
-        await loadGameBoard();
-        setupShieldRepair();
-        updateDisplays();
-        console.log('Game initialized successfully');
-        console.log(`Loaded ${GameData.entities.length} entities from CSV`);
-    } catch (error) {
-        console.error('Error initializing game:', error);
-        boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game data</p>';
+    // Hide game container initially
+    const gameContainer = document.getElementById('game-container');
+    if (gameContainer) {
+        gameContainer.style.display = 'none';
     }
+    
+    // Set up title screen
+    setupTitleScreen();
+}
+
+// Set up title screen and button handlers
+function setupTitleScreen() {
+    const titleScreen = document.getElementById('title-screen');
+    const btnC = document.getElementById('btn-c');
+    const btnL = document.getElementById('btn-l');
+    const btnLnA = document.getElementById('btn-lna');
+    const btnS = document.getElementById('btn-s');
+    
+    if (!titleScreen) return;
+    
+    // Handle C, L, and LnA buttons - start the game
+    const startGameButtons = [btnC, btnL, btnLnA];
+    startGameButtons.forEach(button => {
+        if (button) {
+            addTouchAndClickHandler(button, () => {
+                startGame();
+            });
+        }
+    });
+    
+    // Handle S button (if needed for settings or other functionality)
+    if (btnS) {
+        addTouchAndClickHandler(btnS, () => {
+            // Add S button functionality here if needed
+            console.log('S button clicked');
+        });
+    }
+}
+
+// Start the game - hide title screen and show game board
+async function startGame() {
+    const titleScreen = document.getElementById('title-screen');
+    const gameContainer = document.getElementById('game-container');
+    
+    if (!titleScreen || !gameContainer) return;
+    
+    // Add hiding class to trigger exit animations
+    titleScreen.classList.add('hiding');
+    
+    // Wait for animations to complete, then hide title screen and show game
+    setTimeout(async () => {
+        titleScreen.classList.add('hidden');
+        gameContainer.style.display = 'flex'; // Match the CSS flex display
+        
+        // Initialize the game
+        try {
+            await loadCSVData();
+            await preloadImages();
+            await loadMarkerSVG();
+            await loadPartsIcon();
+            await loadGameBoard();
+            setupShieldRepair();
+            updateDisplays();
+            console.log('Game initialized successfully');
+            console.log(`Loaded ${GameData.entities.length} entities from CSV`);
+        } catch (error) {
+            console.error('Error initializing game:', error);
+            boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game data</p>';
+        }
+    }, 800); // Match animation duration
 }
 
 // Load the right-click marker SVG
