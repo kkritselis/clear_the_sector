@@ -17,9 +17,9 @@ const GameState = {
     isMoving: false // Flag to track if player is currently moving
 };
 
-// Game data loaded from CSV
+// Game data loaded from JSON
 const GameData = {
-    entities: [], // Array of entity objects parsed from CSV
+    entities: [], // Array of entity objects loaded from JSON
     images: {}, // Cache of loaded images by sprite name
     markerSvg: null // Cached right-click marker SVG
 };
@@ -88,7 +88,7 @@ async function startGame() {
         
         // Initialize the game
         try {
-            await loadCSVData();
+            await loadJSONData();
             await preloadImages();
             await loadMarkerSVG();
             await loadPartsIcon();
@@ -96,7 +96,7 @@ async function startGame() {
             setupShieldRepair();
             updateDisplays();
             console.log('Game initialized successfully');
-            console.log(`Loaded ${GameData.entities.length} entities from CSV`);
+            console.log(`Loaded ${GameData.entities.length} entities from JSON`);
         } catch (error) {
             console.error('Error initializing game:', error);
             boardContainer.innerHTML = '<p style="color: var(--accent-orange); text-align: center;">Error loading game data</p>';
@@ -321,111 +321,23 @@ function setupShieldRepair() {
     shieldsDisplay.title = 'Click or tap to recharge shields (costs parts based on recharge level)';
 }
 
-// Parse CSV text into array of objects
-// Handles commas within DESC and ALERT_TEXT fields
-function parseCSV(csvText) {
-    const lines = csvText.trim().split('\n');
-    if (lines.length < 2) return [];
-    
-    // Parse header row - headers don't contain commas, so simple split works
-    const headers = lines[0].split(',').map(h => h.trim());
-    const numHeaders = headers.length;
-    
-    // Parse data rows
-    const entities = [];
-    for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue; // Skip empty rows
-        
-        // Parse CSV line handling commas within DESC and ALERT_TEXT fields
-        // Structure: CODE,NAME,DAMAGE,COUNT,SPRITE_NAME,SHIELD_BONUS,PART_BONUS,SHIELD_SURGE,DESC,ALERT_TEXT
-        // First 8 fields don't contain commas, DESC and ALERT_TEXT may contain commas
-        const values = [];
-        const parts = line.split(',');
-        
-        // First 8 fields are guaranteed to not have commas
-        for (let j = 0; j < 8 && j < parts.length; j++) {
-            values.push(parts[j].trim());
-        }
-        
-        // Remaining parts (if any) need to be handled for DESC and ALERT_TEXT
-        if (parts.length > 8) {
-            // Join all parts from index 8 onwards, then split by last comma
-            const remaining = parts.slice(8).join(',');
-            
-            // Find the last comma to separate DESC and ALERT_TEXT
-            const lastCommaIndex = remaining.lastIndexOf(',');
-            
-            if (lastCommaIndex >= 0) {
-                // Split DESC and ALERT_TEXT at the last comma
-                values.push(remaining.substring(0, lastCommaIndex).trim());
-                values.push(remaining.substring(lastCommaIndex + 1).trim());
-            } else {
-                // No comma found, treat entire remaining as DESC
-                values.push(remaining.trim());
-                values.push(''); // Empty ALERT_TEXT
-            }
-        } else if (parts.length === 8) {
-            // Exactly 8 fields, add empty DESC and ALERT_TEXT
-            values.push('');
-            values.push('');
-        }
-        
-        // Ensure we have enough values
-        while (values.length < numHeaders) {
-            values.push('');
-        }
-        
-        // Create entity object
-        const entity = {};
-        
-        // First column is the ID (CODE column)
-        if (values[0]) {
-            entity.id = values[0].trim();
-        }
-        
-        // Map columns to headers (skip CODE column at index 0)
-        for (let index = 1; index < numHeaders; index++) {
-            const header = headers[index];
-            const value = values[index] || '';
-            const trimmedValue = value.trim();
-            
-            // Convert numeric fields
-            if (['DAMAGE', 'COUNT', 'SHIELD_BONUS', 'PART_BONUS', 'SHIELD_SURGE'].includes(header)) {
-                entity[header.toLowerCase()] = trimmedValue ? parseInt(trimmedValue, 10) : 0;
-            } else {
-                entity[header.toLowerCase()] = trimmedValue;
-            }
-        }
-        
-        // Only add entities with a valid ID and sprite
-        if (entity.id && entity.sprite_name) {
-            entities.push(entity);
-        } else {
-            console.warn(`Skipping entity with missing ID or sprite_name:`, entity);
-        }
-    }
-    
-    return entities;
-}
-
-// Load CSV data file
-async function loadCSVData() {
+// Load JSON data file
+async function loadJSONData() {
     try {
-        const response = await fetch('data/sector_data.csv');
+        const response = await fetch('data/data.json');
         if (!response.ok) {
-            throw new Error(`Failed to load CSV: ${response.statusText}`);
+            throw new Error(`Failed to load JSON: ${response.statusText}`);
         }
-        const csvText = await response.text();
-        GameData.entities = parseCSV(csvText);
-        console.log('CSV data loaded:', GameData.entities);
+        const jsonData = await response.json();
+        GameData.entities = jsonData;
+        console.log('JSON data loaded:', GameData.entities);
     } catch (error) {
-        console.error('Error loading CSV data:', error);
+        console.error('Error loading JSON data:', error);
         throw error;
     }
 }
 
-// Preload all images referenced in the CSV
+// Preload all images referenced in the JSON data
 async function preloadImages() {
     const imagePromises = [];
     const uniqueSprites = new Set();
@@ -800,12 +712,12 @@ function getNeighborIndices(hexIndex) {
     return distances.slice(0, 6).map(d => d.index);
 }
 
-// Find entity by ID in CSV data
+// Find entity by ID in JSON data
 function findEntityById(entityId) {
     return GameData.entities.find(entity => {
         // Check if the first column (ID) matches
-        // The CSV parser should have stored this, but let's check the raw data
-        // Actually, looking at the CSV, the first column is the ID (E01, E11, etc.)
+        // The JSON data should have stored this, but let's check the raw data
+        // Actually, looking at the JSON, the id field contains the entity ID (E01, E11, etc.)
         // We need to check the entity structure
         return entity.name && entity.name.toLowerCase().includes(entityId.toLowerCase());
     });
@@ -893,7 +805,7 @@ function setupBoardPlacements(svg) {
     // Find E11 (Local Warlord) by ID
     const e11 = GameData.entities.find(e => e.id && e.id.trim() === 'E11');
     if (!e11) {
-        console.warn('E11 (Local Warlord) not found in CSV data');
+        console.warn('E11 (Local Warlord) not found in JSON data');
         console.log('Available entities:', GameData.entities.map(e => e.id));
         console.log('All entities:', GameData.entities);
         return;
@@ -902,7 +814,7 @@ function setupBoardPlacements(svg) {
     // Find E12 (Dominion Fighter Ship) by ID
     const e12 = GameData.entities.find(e => e.id && e.id.trim() === 'E12');
     if (!e12) {
-        console.warn('E12 (Dominion Fighter Ship) not found in CSV data');
+        console.warn('E12 (Dominion Fighter Ship) not found in JSON data');
         console.log('Available entities:', GameData.entities.map(e => e.id));
         console.log('All entities:', GameData.entities);
         return;
@@ -1160,7 +1072,7 @@ function placeShieldSurgeNearPlayer(svg, playerHexIndex) {
     // Find B03 entity
     const b03 = GameData.entities.find(e => e.id === 'B03');
     if (!b03) {
-        console.warn('B03 (Shield Surge) not found in CSV data');
+        console.warn('B03 (Shield Surge) not found in JSON data');
         return;
     }
     
@@ -2202,8 +2114,14 @@ function defeatEnemy(hex, enemy, hexIndex) {
     // Subtract attack from shields
     GameState.shields -= attackValue;
     
-    // Scavenge parts - use part_bonus if damage is 0, otherwise use attack value
-    const partsAwarded = (attackValue === 0 && enemy.part_bonus !== undefined) ? enemy.part_bonus : attackValue;
+    // Add shield bonus as shield surges to inventory if present
+    if (enemy.shield_bonus !== undefined && enemy.shield_bonus > 0) {
+        GameState.shieldSurgeCount += enemy.shield_bonus;
+        console.log(`Shield bonus: +${enemy.shield_bonus} shield surge(s) added to inventory. Total: ${GameState.shieldSurgeCount}`);
+    }
+    
+    // Scavenge parts - use part_bonus if present, otherwise use attack value
+    const partsAwarded = (enemy.part_bonus !== undefined && enemy.part_bonus > 0) ? enemy.part_bonus : attackValue;
     GameState.parts += partsAwarded;
     
     console.log(`Enemy defeated! Lost ${attackValue} shields, gained ${partsAwarded} parts`);
@@ -2589,7 +2507,7 @@ function updateShieldSurgeIcons() {
     
     // Only create container if there are shield surges
     if (GameState.shieldSurgeCount > 0) {
-        // Create container for shield surge icons
+        // Create container for shield surge icon
         const surgeContainer = document.createElement('div');
         surgeContainer.className = 'shield-surge-container';
         surgeContainer.style.display = 'flex';
@@ -2597,59 +2515,70 @@ function updateShieldSurgeIcons() {
         surgeContainer.style.marginLeft = '8px';
         surgeContainer.style.alignItems = 'center';
         
-        // Create shield surge icons
-        for (let i = 0; i < GameState.shieldSurgeCount; i++) {
-            const surgeIcon = document.createElement('div');
-            surgeIcon.className = 'shield-surge-icon';
-            surgeIcon.setAttribute('data-surge-index', i.toString());
-            surgeIcon.style.width = '20px';
-            surgeIcon.style.height = '20px';
-            surgeIcon.style.cursor = 'pointer';
+        // Create single shield surge icon
+        const surgeIcon = document.createElement('div');
+        surgeIcon.className = 'shield-surge-icon';
+        surgeIcon.style.width = '20px';
+        surgeIcon.style.height = '20px';
+        surgeIcon.style.cursor = 'pointer';
+        surgeIcon.style.opacity = '1';
+        surgeIcon.style.transition = 'opacity 0.2s ease';
+        surgeIcon.title = 'Click to use shield surge (maxes out shields)';
+        
+        // Create filled shield SVG icon
+        const shieldSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        shieldSvg.setAttribute('viewBox', '0 0 24 24');
+        shieldSvg.setAttribute('width', '20');
+        shieldSvg.setAttribute('height', '20');
+        shieldSvg.style.display = 'block';
+        
+        // Filled shield path
+        const shieldPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        shieldPath.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
+        shieldPath.setAttribute('fill', '#00d4ff');
+        shieldPath.setAttribute('stroke', '#00d4ff');
+        shieldPath.setAttribute('stroke-width', '1');
+        shieldSvg.appendChild(shieldPath);
+        
+        surgeIcon.appendChild(shieldSvg);
+        
+        // Add click and touch handler
+        const surgeClickHandler = (e) => {
+            e.stopPropagation(); // Prevent triggering shield recharge
+            useShieldSurge(0);
+        };
+        addTouchAndClickHandler(surgeIcon, surgeClickHandler);
+        
+        // Add hover effect (mouse)
+        surgeIcon.addEventListener('mouseenter', () => {
+            surgeIcon.style.opacity = '0.7';
+        });
+        surgeIcon.addEventListener('mouseleave', () => {
             surgeIcon.style.opacity = '1';
-            surgeIcon.style.transition = 'opacity 0.2s ease';
-            surgeIcon.title = 'Click to use shield surge (maxes out shields)';
-            
-            // Create filled shield SVG icon
-            const shieldSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            shieldSvg.setAttribute('viewBox', '0 0 24 24');
-            shieldSvg.setAttribute('width', '20');
-            shieldSvg.setAttribute('height', '20');
-            shieldSvg.style.display = 'block';
-            
-            // Filled shield path
-            const shieldPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            shieldPath.setAttribute('d', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z');
-            shieldPath.setAttribute('fill', '#00d4ff');
-            shieldPath.setAttribute('stroke', '#00d4ff');
-            shieldPath.setAttribute('stroke-width', '1');
-            shieldSvg.appendChild(shieldPath);
-            
-            surgeIcon.appendChild(shieldSvg);
-            
-            // Add click and touch handler
-            const surgeClickHandler = (e) => {
-                e.stopPropagation(); // Prevent triggering shield recharge
-                useShieldSurge(i);
-            };
-            addTouchAndClickHandler(surgeIcon, surgeClickHandler);
-            
-            // Add hover effect (mouse)
-            surgeIcon.addEventListener('mouseenter', () => {
-                surgeIcon.style.opacity = '0.7';
-            });
-            surgeIcon.addEventListener('mouseleave', () => {
-                surgeIcon.style.opacity = '1';
-            });
-            
-            // Add touch hover effect
-            surgeIcon.addEventListener('touchstart', () => {
-                surgeIcon.style.opacity = '0.7';
-            }, { passive: true });
-            surgeIcon.addEventListener('touchend', () => {
-                surgeIcon.style.opacity = '1';
-            }, { passive: true });
-            
-            surgeContainer.appendChild(surgeIcon);
+        });
+        
+        // Add touch hover effect
+        surgeIcon.addEventListener('touchstart', () => {
+            surgeIcon.style.opacity = '0.7';
+        }, { passive: true });
+        surgeIcon.addEventListener('touchend', () => {
+            surgeIcon.style.opacity = '1';
+        }, { passive: true });
+        
+        surgeContainer.appendChild(surgeIcon);
+        
+        // Add count text if more than 1
+        if (GameState.shieldSurgeCount > 1) {
+            const countText = document.createElement('span');
+            countText.className = 'shield-surge-count';
+            countText.textContent = `x ${GameState.shieldSurgeCount}`;
+            countText.style.color = '#00d4ff';
+            countText.style.fontFamily = 'Orbitron, sans-serif';
+            countText.style.fontSize = '0.875rem';
+            countText.style.fontWeight = '600';
+            countText.style.marginLeft = '2px';
+            countText.style.userSelect = 'none';
+            surgeContainer.appendChild(countText);
         }
         
         // Insert after status-info

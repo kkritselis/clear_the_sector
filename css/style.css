@@ -325,6 +325,11 @@ body::before {
     touch-action: manipulation;
 }
 
+.status-item.parts,
+.status-item.cleared {
+    width: fit-content;
+}
+
 .status-item::before {
     content: '';
     position: absolute;
@@ -412,7 +417,6 @@ body::before {
 /* Shield surge icons */
 .shield-surge-container {
     display: flex;
-    gap: 4px;
     margin-left: 8px;
     align-items: center;
 }
@@ -437,6 +441,16 @@ body::before {
 }
 
 .shield-surge-icon svg {
+    filter: drop-shadow(0 0 4px var(--accent-cyan));
+}
+
+.shield-surge-count {
+    color: var(--accent-cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-left: 2px;
+    user-select: none;
     filter: drop-shadow(0 0 4px var(--accent-cyan));
 }
 

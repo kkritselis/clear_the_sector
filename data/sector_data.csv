@@ -10,11 +10,11 @@ E08,Obliterator Class Ship,8,6,E08.png,0,8,0,Enemy
 E09,Harbinger Class Ship,9,2,E09.png,0,0,1,Enemy - When defeated the player gains another shield surge.,You've recovered a Shield Surge Device in the wreckage of a Harbinger Class Ship!
 E10,Command Core,10,1,E10.png,0,10,0,When defeated it changes E15 from active to inactive.,You've captured the Command Core and overloaded the Extinction Engines!
 E11,Local Warlord,1,1,E11.png,0,1,0,Enemy, You've defeated the Local Warlord and revealed the location of the Command Core!
-E12,Dominion Fighter Ship,5,6,E12.png,0,5,0,Enemy
-E13,Rebel Trap,11,1,B01.png,0,1,0,
-E14,Merc Ship,5,1,E14.png,0,0,0,
+E12,Dominion Fighter Ship,5,6,E12.png,0,5,0,Enemy, You've defeated a Dominion Fighter Ship... the local Warlord will be near.
+E13,Rebel Trap,11,1,B01.png,0,1,0,,It's a trap!
+E14,Merc Ship,5,1,E14.png,0,0,0,,You've captured a mercenary... He gave up the location of all the Skirmisher Class Ships!
 E15,Extinction Engine,100,8,E15.png,0,3,0,Has two states (active and inactive).  When active it takes 100 damage. When inactive it gives 3 parts.
-B01,Rebel Stash,0,3,B01.png,3,0,0,
+B01,Rebel Stash,0,3,B01.png,3,0,0,,You've discovered 3 parts in a Rebel Stash!
 B02,Rebel Stash,0,1,B01.png,0,0,1,When captured the player gains another shield surge.,You've recovered a Shield Surge Device in a Rebel Stash!
 B03,Shield Surge,0,9,B03.png,0,0,1,Add to inventory,You've recovered a Shield Surge!
-E16,Trader Ship,5,1,E16.png,0,5,0,When defeated it reveals the E05 and E08 ships
+E16,Trader Ship,5,1,E16.png,0,5,0,When defeated it reveals the E05 and E08 ships, The black market trader revealed all of his contacts...
