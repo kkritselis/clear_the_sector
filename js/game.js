@@ -1088,33 +1088,38 @@ function placePlayer(svg) {
     // Get bounding box of the hex
     const bbox = hexPolygon.getBBox();
     
-    // Check if player image already exists
+    // Check if player image/group already exists
+    const existingPlayerGroup = svg.querySelector('g[data-player-group="true"]');
+    if (existingPlayerGroup) {
+        existingPlayerGroup.remove();
+    }
     const existingPlayerImage = svg.querySelector('image[data-player="true"]');
     if (existingPlayerImage) {
         existingPlayerImage.remove();
     }
     
-    // Create player image element
+    // Create player group and image
+    const imageSize = 50;
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y + bbox.height / 2 + 18;
+    
+    const playerGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    playerGroup.setAttribute('data-player-group', 'true');
+    playerGroup.setAttribute('transform', `translate(${centerX}, ${centerY}) rotate(0)`);
+    
     const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     playerImage.setAttribute('data-player', 'true');
     playerImage.setAttribute('data-hex-index', playerHexIndex.toString());
-    
-    // Center the player image on the hex (scaled up for larger hexes)
-    const imageSize = 50;
-    const imageX = bbox.x + bbox.width / 2 - imageSize / 2;
-    // Move player sprite down a little to avoid overlap with damage text
-    const imageY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
-    
     playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
-    playerImage.setAttribute('x', imageX.toString());
-    playerImage.setAttribute('y', imageY.toString());
+    playerImage.setAttribute('x', (-imageSize / 2).toString());
+    playerImage.setAttribute('y', (-imageSize / 2).toString());
     playerImage.setAttribute('width', imageSize.toString());
     playerImage.setAttribute('height', imageSize.toString());
     playerImage.setAttribute('opacity', '1');
-    playerImage.setAttribute('pointer-events', 'none'); // Don't block clicks
+    playerImage.setAttribute('pointer-events', 'none');
     
-    // Append player image to SVG
-    svg.appendChild(playerImage);
+    playerGroup.appendChild(playerImage);
+    svg.appendChild(playerGroup);
     
     // Apply critical glow if shields are at 0
     if (GameState.shields <= 0) {
@@ -1906,70 +1911,81 @@ function movePlayerToHex(hexIndex) {
     
     // Get old player position BEFORE removing
     const oldPlayerImage = svg.querySelector('image[data-player="true"]');
+    const oldPlayerGroup = svg.querySelector('g[data-player-group="true"]');
+    const imageSize = 50;
     let startX, startY;
     
     if (oldPlayerImage) {
-        // Get the actual current position of the player image
-        // If there's an animation, getBBox() will give us the current visual position
-        try {
-            const bbox = oldPlayerImage.getBBox();
-            startX = bbox.x;
-            startY = bbox.y;
-        } catch (e) {
-            // Fallback to attribute if getBBox fails
-            const currentX = oldPlayerImage.getAttribute('x');
-            const currentY = oldPlayerImage.getAttribute('y');
-            startX = parseFloat(currentX) || 0;
-            startY = parseFloat(currentY) || 0;
+        // Extract current position from the group transform
+        if (oldPlayerGroup) {
+            const transformAttr = oldPlayerGroup.getAttribute('transform') || '';
+            const translateMatch = transformAttr.match(/translate\(([-\d.]+),\s*([-\d.]+)\)/);
+            if (translateMatch) {
+                // Group transform stores center position, convert to top-left
+                startX = parseFloat(translateMatch[1]) - imageSize / 2;
+                startY = parseFloat(translateMatch[2]) - imageSize / 2;
+            } else {
+                startX = parseFloat(oldPlayerImage.getAttribute('x')) || 0;
+                startY = parseFloat(oldPlayerImage.getAttribute('y')) || 0;
+            }
+            // Remove old group (includes the image)
+            oldPlayerGroup.remove();
+        } else {
+            // Legacy: image without group
+            try {
+                const pBbox = oldPlayerImage.getBBox();
+                startX = pBbox.x;
+                startY = pBbox.y;
+            } catch (e) {
+                startX = parseFloat(oldPlayerImage.getAttribute('x')) || 0;
+                startY = parseFloat(oldPlayerImage.getAttribute('y')) || 0;
+            }
+            oldPlayerImage.remove();
         }
-        
-        // Remove old image after capturing position
-        oldPlayerImage.remove();
     } else {
         // No old player image - this is the first move, so start from the end position (no animation)
         const bbox = hexPolygon.getBBox();
-        const imageSize = 50;
         startX = bbox.x + bbox.width / 2 - imageSize / 2;
         startY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
     }
     
     const bbox = hexPolygon.getBBox();
-    const imageSize = 50;
     const endX = bbox.x + bbox.width / 2 - imageSize / 2;
     // Move player sprite down a little to avoid overlap with damage text
     const endY = bbox.y + bbox.height / 2 - imageSize / 2 + 18;
+    
+    // Calculate angle from start to end (center of sprite)
+    const startCenterX = startX + imageSize / 2;
+    const startCenterY = startY + imageSize / 2;
+    const endCenterX = endX + imageSize / 2;
+    const endCenterY = endY + imageSize / 2;
+    const dx = endCenterX - startCenterX;
+    const dy = endCenterY - startCenterY;
+    // Angle in degrees: 0 = right, 90 = down. Offset by -90 so "up" is 0 degrees for the ship sprite
+    const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+    
+    // Create a group to hold the player image (for rotation around center)
+    const playerGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    playerGroup.setAttribute('data-player-group', 'true');
     
     // Create player image at starting position
     const playerImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     playerImage.setAttribute('data-player', 'true');
     playerImage.setAttribute('data-hex-index', hexIndex.toString());
     playerImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', 'img/player.png');
-    playerImage.setAttribute('x', startX.toString());
-    playerImage.setAttribute('y', startY.toString());
+    // Position image centered at origin within the group
+    playerImage.setAttribute('x', (-imageSize / 2).toString());
+    playerImage.setAttribute('y', (-imageSize / 2).toString());
     playerImage.setAttribute('width', imageSize.toString());
     playerImage.setAttribute('height', imageSize.toString());
     playerImage.setAttribute('opacity', '1');
     playerImage.setAttribute('pointer-events', 'none');
     
-    // Add animation for movement
-    const animateX = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-    animateX.setAttribute('attributeName', 'x');
-    animateX.setAttribute('from', startX.toString());
-    animateX.setAttribute('to', endX.toString());
-    animateX.setAttribute('dur', '1.5s');
-    animateX.setAttribute('fill', 'freeze');
+    // Set the group transform to position at start and rotate toward destination
+    playerGroup.setAttribute('transform', `translate(${startCenterX}, ${startCenterY}) rotate(${angleDeg})`);
     
-    const animateY = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-    animateY.setAttribute('attributeName', 'y');
-    animateY.setAttribute('from', startY.toString());
-    animateY.setAttribute('to', endY.toString());
-    animateY.setAttribute('dur', '1.5s');
-    animateY.setAttribute('fill', 'freeze');
-    
-    playerImage.appendChild(animateX);
-    playerImage.appendChild(animateY);
-    
-    svg.appendChild(playerImage);
+    svg.appendChild(playerGroup);
+    playerGroup.appendChild(playerImage);
     
     // Apply critical glow if shields are at 0
     if (GameState.shields <= 0) {
@@ -2030,37 +2046,121 @@ function movePlayerToHex(hexIndex) {
         processMovementQueue();
     };
     
-    // Wait for animation to complete before handling entity
-    if (oldPlayerImage) {
-        // Animation is happening - wait for it to complete (1.5 second duration)
-        // Use a flag to ensure we only handle entity once
+    // Warp animation parameters
+    const animDuration = 1200; // ms
+    const hasAnimation = !!oldPlayerImage;
+    
+    if (hasAnimation) {
+        // Create warp trail elements
+        const warpTrails = [];
+        const numTrails = 5;
+        for (let i = 0; i < numTrails; i++) {
+            const trail = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+            trail.setAttribute('class', 'warp-trail');
+            trail.setAttribute('cx', startCenterX.toString());
+            trail.setAttribute('cy', startCenterY.toString());
+            trail.setAttribute('rx', '2');
+            trail.setAttribute('ry', '2');
+            trail.setAttribute('fill', 'none');
+            trail.setAttribute('stroke', '#00d4ff');
+            trail.setAttribute('stroke-width', '1.5');
+            trail.setAttribute('opacity', '0');
+            trail.setAttribute('pointer-events', 'none');
+            svg.insertBefore(trail, playerGroup);
+            warpTrails.push(trail);
+        }
+        
+        // Easing function: ease-in-out cubic
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+        
+        const startTime = performance.now();
         let entityHandled = false;
-        const handleEntityOnce = () => {
-            if (!entityHandled) {
-                entityHandled = true;
-                handleEntityAfterAnimation();
+        
+        function animateWarp(currentTime) {
+            const elapsed = currentTime - startTime;
+            const rawProgress = Math.min(elapsed / animDuration, 1);
+            const progress = easeInOutCubic(rawProgress);
+            
+            // Interpolate position
+            const currentX = startCenterX + (endCenterX - startCenterX) * progress;
+            const currentY = startCenterY + (endCenterY - startCenterY) * progress;
+            
+            // Calculate speed for warp effect (derivative of easing)
+            const speed = rawProgress < 0.5
+                ? 12 * rawProgress * rawProgress
+                : 12 * (1 - rawProgress) * (1 - rawProgress);
+            
+            // Scale stretch based on speed (elongate in direction of travel)
+            const stretchX = 1 + speed * 0.15;
+            const stretchY = 1 / Math.sqrt(stretchX); // Compensate to keep area roughly equal
+            
+            // Update player group transform with position, rotation, and stretch
+            playerGroup.setAttribute('transform',
+                `translate(${currentX}, ${currentY}) rotate(${angleDeg}) scale(${stretchY}, ${stretchX})`
+            );
+            
+            // Update warp trails - stretched ellipses trailing behind the ship
+            warpTrails.forEach((trail, i) => {
+                const trailDelay = (i + 1) * 0.06;
+                const trailProgress = Math.max(0, Math.min(1, easeInOutCubic(Math.max(0, rawProgress - trailDelay))));
+                const trailX = startCenterX + (endCenterX - startCenterX) * trailProgress;
+                const trailY = startCenterY + (endCenterY - startCenterY) * trailProgress;
+                
+                // Trail opacity peaks in the middle of the journey
+                const trailOpacity = speed * 0.5 * (1 - (i / numTrails) * 0.6);
+                
+                // Stretch trail ellipses along travel direction
+                const trailStretch = 2 + speed * 8;
+                
+                trail.setAttribute('cx', trailX.toString());
+                trail.setAttribute('cy', trailY.toString());
+                // Rotate ellipse to align with travel direction
+                trail.setAttribute('transform', `rotate(${angleDeg}, ${trailX}, ${trailY})`);
+                trail.setAttribute('rx', (3 - i * 0.3).toString());
+                trail.setAttribute('ry', trailStretch.toString());
+                trail.setAttribute('opacity', Math.max(0, trailOpacity).toFixed(3));
+                trail.setAttribute('stroke-opacity', Math.max(0, trailOpacity).toFixed(3));
+            });
+            
+            if (rawProgress < 1) {
+                requestAnimationFrame(animateWarp);
+            } else {
+                // Animation complete - clean up warp trails
+                warpTrails.forEach(trail => trail.remove());
+                
+                // Reset scale and set final position without stretch
+                playerGroup.setAttribute('transform',
+                    `translate(${endCenterX}, ${endCenterY}) rotate(0)`
+                );
+                
+                // Handle entity
+                if (!entityHandled) {
+                    entityHandled = true;
+                    handleEntityAfterAnimation();
+                }
             }
-        };
+        }
         
-        // Listen for animation end events
-        animateX.addEventListener('endEvent', handleEntityOnce, { once: true });
-        animateY.addEventListener('endEvent', handleEntityOnce, { once: true });
-        
-        // Start the animation
-        animateX.beginElement();
-        animateY.beginElement();
-        
-        // Fallback: use setTimeout in case endEvent doesn't fire reliably
-        setTimeout(handleEntityOnce, 1500);
+        requestAnimationFrame(animateWarp);
     } else {
-        // No animation (first move) - handle entity immediately
+        // No animation (first move) - set position and handle entity immediately
+        playerGroup.setAttribute('transform', `translate(${endCenterX}, ${endCenterY}) rotate(0)`);
         handleEntityAfterAnimation();
     }
 }
 
 // Check if player has won (cleared all hexes with entities)
 function checkWinCondition() {
-    if (GameState.clearedHexes.size >= GameState.totalHexesWithEntities) {
+    const clearedCount = GameState.clearedHexes.size;
+    const totalEntities = GameState.totalHexesWithEntities;
+    
+    console.log(`Win check: cleared ${clearedCount} of ${totalEntities} entities`);
+    
+    // Only win when we've cleared exactly all entities (not >= to prevent early wins)
+    if (clearedCount === totalEntities && totalEntities > 0) {
+        console.log('Sector cleared! All entities defeated.');
         showWinScreen();
     }
 }
@@ -2187,19 +2287,72 @@ function defeatEnemy(hex, enemy, hexIndex) {
     updateDisplays();
 }
 
+// Shake all hexes and their contents
+function shakeAllHexes() {
+    const svg = boardContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    
+    // Shake all hex polygons
+    hexPolygons.forEach((hexPolygon, hexIndex) => {
+        // Remove any existing shake class
+        hexPolygon.classList.remove('hex-shake');
+        
+        // Force reflow to restart animation
+        void hexPolygon.offsetWidth;
+        
+        // Add shake class
+        hexPolygon.classList.add('hex-shake');
+        
+        // Remove class after animation completes
+        setTimeout(() => {
+            hexPolygon.classList.remove('hex-shake');
+        }, 500);
+    });
+    
+    // Shake all images (entities and player)
+    const allImages = svg.querySelectorAll('image');
+    allImages.forEach(img => {
+        img.classList.remove('hex-shake');
+        void img.offsetWidth;
+        img.classList.add('hex-shake');
+        setTimeout(() => {
+            img.classList.remove('hex-shake');
+        }, 500);
+    });
+    
+    // Shake all text elements (damage numbers, sums, markers)
+    const allTexts = svg.querySelectorAll('text');
+    allTexts.forEach(text => {
+        text.classList.remove('hex-shake');
+        void text.offsetWidth;
+        text.classList.add('hex-shake');
+        setTimeout(() => {
+            text.classList.remove('hex-shake');
+        }, 500);
+    });
+    
+    // Shake hex covers
+    const hexCovers = svg.querySelectorAll('polygon.hex-cover');
+    hexCovers.forEach(cover => {
+        cover.classList.remove('hex-shake');
+        void cover.offsetWidth;
+        cover.classList.add('hex-shake');
+        setTimeout(() => {
+            cover.classList.remove('hex-shake');
+        }, 500);
+    });
+}
+
 // Deactivate all E15 (Extinction Engine) entities on the board
 function deactivateAllE15() {
     const svg = boardContainer.querySelector('svg');
     if (!svg) return;
     
-    // Trigger screen shake
-    const boardContainerEl = document.getElementById('board-container');
-    if (boardContainerEl) {
-        boardContainerEl.classList.add('shake');
-        setTimeout(() => {
-            boardContainerEl.classList.remove('shake');
-        }, 500);
-    }
+    // Trigger hex shake instead of screen shake
+    shakeAllHexes();
     
     // Find all E15 entities on the board
     let e15Count = 0;
