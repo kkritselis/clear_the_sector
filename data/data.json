@@ -102,7 +102,7 @@
     "count": 2,
     "sprite_name": "E09.png",
     "shield_bonus": 0,
-    "part_bonus": 0,
+    "part_bonus": 3,
     "shield_surge": 1,
     "desc": "Enemy - When defeated the player gains another shield surge.",
     "alert_text": "You've recovered a Shield Surge Device in the wreckage of a Harbinger Class Ship!"
@@ -150,7 +150,7 @@
     "count": 1,
     "sprite_name": "B01.png",
     "shield_bonus": 0,
-    "part_bonus": 1,
+    "part_bonus": 11,
     "shield_surge": 0,
     "desc": "",
     "alert_text": "It's a trap!"
@@ -162,7 +162,7 @@
     "count": 1,
     "sprite_name": "E14.png",
     "shield_bonus": 0,
-    "part_bonus": 0,
+    "part_bonus": 5,
     "shield_surge": 0,
     "desc": "",
     "alert_text": "You've captured a mercenary... He gave up the location of all the Skirmisher Class Ships!"
@@ -185,8 +185,8 @@
     "damage": 0,
     "count": 3,
     "sprite_name": "B01.png",
-    "shield_bonus": 3,
-    "part_bonus": 0,
+    "shield_bonus": 0,
+    "part_bonus": 3,
     "shield_surge": 0,
     "desc": "",
     "alert_text": "You've discovered 3 parts in a Rebel Stash!"
@@ -207,7 +207,7 @@
     "id": "B03",
     "name": "Shield Surge",
     "damage": 0,
-    "count": 9,
+    "count": 8,
     "sprite_name": "B03.png",
     "shield_bonus": 0,
     "part_bonus": 0,
