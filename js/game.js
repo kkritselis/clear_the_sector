@@ -2797,14 +2797,15 @@ function rechargeShields() {
         return;
     }
     
-    // Deduct parts first
+    // Calculate new shield level BEFORE incrementing recharge count
+    // Both lookups must use the same repairCount index
+    const newShieldLevel = getShieldLevelAfterRecharge();
+    
+    // Deduct parts
     GameState.parts -= partsNeeded;
     
-    // Increment recharge count
+    // Increment recharge count (after both lookups)
     GameState.repairCount++;
-    
-    // Calculate new shield level after recharge
-    const newShieldLevel = getShieldLevelAfterRecharge();
     
     // Set shields to new level (recharge always sets to the new level)
     GameState.shields = newShieldLevel;
