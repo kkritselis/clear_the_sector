@@ -32,9 +32,11 @@ python -m http.server 8000
 - Parts needed increases with each recharge: 4 → 5 → 6 → 7... up to 25 (capped)
 
 **Shield Surge**
-- Special items collected by defeating B03 (Shield Surge) entities
-- Displayed as filled shield icons next to the shield value
-- Click a shield surge icon to instantly max out shields (no parts cost)
+- Special items collected by defeating certain entities (B03, E09, B01, B02)
+- Displayed as a single blue shield icon next to the shield value
+- When count = 1: shows one icon
+- When count > 1: shows one icon followed by count (e.g., "x 4")
+- Click the shield surge icon to instantly max out shields (no parts cost)
 - Multiple shield surges can be collected and stored
 
 ### Board Setup
@@ -43,7 +45,7 @@ The game board is procedurally generated with entities placed according to speci
 
 1. **E11 (Local Warlord)** - Placed at a random location first
 2. **E12 (Dominion Fighter Ship)** - Placed on all 6 neighboring hexes around E11
-3. **All Other Entities** - Randomly distributed across remaining hexes based on their COUNT values from the CSV data
+3. **All Other Entities** - Randomly distributed across remaining hexes based on their COUNT values from the JSON data
 4. **Player** - Placed on a random empty hex after all entities are placed
 
 ### Visual Indicators
@@ -127,9 +129,13 @@ Each enemy has a **damage value** (shown in red on the sprite). When you encount
 - Shield surges appear as filled shield icons next to the shield display
 - Click/tap a shield surge icon to instantly max out shields (no parts cost)
 
+**B01 (Rebel Stash)**
+- When captured, adds shield surges to inventory based on SHIELD_BONUS value
+- Shield surges appear as a single icon with count (e.g., "x 3") when multiple are collected
+
 ### Leader Alerts
 
-When you defeat certain entities that have ALERT_TEXT defined in the CSV data, the leader character will react:
+When you defeat certain entities that have ALERT_TEXT defined in the JSON data, the leader character will react:
 - The leader image in the big hex switches from `leader_off.png` to `leader_chat.gif`
 - An alert message appears in the rounded rectangle below the leader
 - The alert displays for 5 seconds before the leader returns to the off state
@@ -167,6 +173,7 @@ The shield recharge system uses a progressive cost pattern:
 - Use E16 and E14 strategically to reveal enemy locations
 - Defeat E09 ships to gain shield surges for emergency shield restoration
 - Collect B03 shield surges for additional shield restoration options
+- Capture B01 (Rebel Stash) to gain multiple shield surges at once
 - The risk/reward: stronger enemies give more parts but are more dangerous
 - Queue multiple moves by clicking several hexes - the ship will visit each in sequence
 - Watch the leader alerts for important story information when defeating key enemies
@@ -184,7 +191,7 @@ The shield recharge system uses a progressive cost pattern:
 ## Implemented Features
 
 ### Core Systems
-- ✅ CSV data loading from `data/sector_data.csv`
+- ✅ JSON data loading from `data/data.json`
 - ✅ Image preloading system for all entity sprites
 - ✅ Hex coordinate system with neighbor detection
 - ✅ Procedural entity placement:
@@ -210,7 +217,7 @@ The shield recharge system uses a progressive cost pattern:
 - ✅ Background image (Space-Bkgd.jpg) displayed on game board
 - ✅ Right-click/touch-and-hold damage marker menu with yellow outlines/text
 - ✅ Cyan damage marker text displayed above marked hexes
-- ✅ Shield surge icons displayed next to shield value
+- ✅ Shield surge icons displayed next to shield value (single icon with count when > 1)
 - ✅ Screen shake animation effect
 - ✅ Full-height game board layout (100% viewport height)
 - ✅ Rotated title on left side of board
@@ -222,7 +229,8 @@ The shield recharge system uses a progressive cost pattern:
 - ✅ Combat system with damage calculations
 - ✅ Shield and parts tracking
 - ✅ Progressive shield recharge system with pattern-based costs
-- ✅ Shield surge inventory system (B03 items)
+- ✅ Shield surge inventory system (B03, E09, B01, B02 items)
+- ✅ Shield surge display with count indicator (single icon + "x N" format)
 - ✅ Shield surge usage (instant max shields, no parts cost)
 - ✅ Player movement to any hex (hidden or revealed)
 - ✅ Movement queue system - click multiple hexes to queue sequential moves
@@ -259,23 +267,39 @@ clear_the_sector/
 │   ├── leader_chat.gif     # Leader talking animation
 │   └── [entity sprites]    # Entity sprites (E01-E16, B01-B03)
 ├── data/
-│   └── sector_data.csv     # Entity data (damage, count, sprites, alerts, etc.)
+│   └── data.json           # Entity data (damage, count, sprites, alerts, etc.)
 └── README.md
 ```
 
 ### Data Format
 
-The `sector_data.csv` file contains entity definitions with the following columns:
-- **CODE** - Unique identifier (E01-E16 for enemies, B01-B03 for bonuses)
-- **NAME** - Entity name
-- **DAMAGE** - Attack/damage value
-- **COUNT** - Number of instances to place on the board
-- **SPRITE_NAME** - Image filename (e.g., E01.png)
-- **SHIELD_BONUS** - Shield bonus value
-- **PART_BONUS** - Parts bonus value
-- **SHIELD_SURGE** - Shield surge value (1 = grants shield surge when defeated)
-- **DESC** - Description text
-- **ALERT_TEXT** - Message displayed by the leader when this entity is defeated (optional)
+The `data.json` file contains an array of entity objects with the following properties:
+- **id** - Unique identifier (E01-E16 for enemies, B01-B03 for bonuses)
+- **name** - Entity name
+- **damage** - Attack/damage value (number)
+- **count** - Number of instances to place on the board (number)
+- **sprite_name** - Image filename (e.g., E01.png)
+- **shield_bonus** - Shield bonus value (number, adds shield surges to inventory when defeated)
+- **part_bonus** - Parts bonus value (number, parts awarded when defeated)
+- **shield_surge** - Shield surge value (number, 1 = grants shield surge when defeated)
+- **desc** - Description text
+- **alert_text** - Message displayed by the leader when this entity is defeated (optional string)
+
+Example entity object:
+```json
+{
+  "id": "E01",
+  "name": "Skirmisher Class Ship",
+  "damage": 1,
+  "count": 9,
+  "sprite_name": "E01.png",
+  "shield_bonus": 0,
+  "part_bonus": 1,
+  "shield_surge": 0,
+  "desc": "Enemy",
+  "alert_text": ""
+}
+```
 
 ### Tech Stack
 - HTML5
