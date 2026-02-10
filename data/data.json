@@ -102,7 +102,7 @@
     "count": 2,
     "sprite_name": "E09.png",
     "shield_bonus": 0,
-    "part_bonus": 3,
+    "part_bonus": 9,
     "shield_surge": 1,
     "desc": "Enemy - When defeated the player gains another shield surge.",
     "alert_text": "You've recovered a Shield Surge Device in the wreckage of a Harbinger Class Ship!"
@@ -207,7 +207,7 @@
     "id": "B03",
     "name": "Shield Surge",
     "damage": 0,
-    "count": 8,
+    "count": 6,
     "sprite_name": "B03.png",
     "shield_bonus": 0,
     "part_bonus": 0,

@@ -1061,48 +1061,188 @@ function placePlayer(svg) {
     // This ensures the damage sum is positioned correctly (moved up)
     updateSingleHexDamageSum(svg, playerHexIndex);
     
-    // Place a shield surge (B03) in one of the player's adjacent hexes
-    placeShieldSurgeNearPlayer(svg, playerHexIndex);
+    // Set up the player's adjacent hexes (shield surge, E05, no E10/E15)
+    setupPlayerAdjacentHexes(svg, playerHexIndex);
     
     console.log('Player placed successfully');
 }
 
-// Place a shield surge (B03) in one of the player's adjacent hexes
-function placeShieldSurgeNearPlayer(svg, playerHexIndex) {
-    // Find B03 entity
-    const b03 = GameData.entities.find(e => e.id === 'B03');
-    if (!b03) {
-        console.warn('B03 (Shield Surge) not found in JSON data');
-        return;
-    }
-    
-    // Get all neighbors of the player's hex
+// Set up the player's adjacent hexes with specific rules:
+// - 1 shield surge (B03) must be adjacent
+// - 1 E05 must be adjacent
+// - No E10 or E15 allowed adjacent to starting position
+function setupPlayerAdjacentHexes(svg, playerHexIndex) {
     const neighborIndices = getNeighborIndices(playerHexIndex);
-    
     if (neighborIndices.length === 0) {
-        console.warn('No neighbors found for player hex, cannot place shield surge');
+        console.warn('No neighbors found for player hex');
         return;
     }
     
-    // Filter to only empty neighbors
-    const emptyNeighbors = neighborIndices.filter(hexIndex => {
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    const totalHexes = hexPolygons.length;
+    
+    // Step 1: Relocate any E10 or E15 from adjacent hexes to non-adjacent hexes
+    neighborIndices.forEach(hexIndex => {
         const cell = GameState.board[hexIndex];
-        return !cell || !cell.entity;
+        if (cell && cell.entity && (cell.entity.id === 'E10' || cell.entity.id === 'E15')) {
+            const entityToMove = cell.entity;
+            console.log(`Relocating ${entityToMove.id} from adjacent hex ${hexIndex}`);
+            
+            // Remove entity visuals from this hex
+            const images = svg.querySelectorAll(`image[data-hex-index="${hexIndex}"]`);
+            images.forEach(img => {
+                if (!img.hasAttribute('data-player')) img.remove();
+            });
+            const texts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+            texts.forEach(text => text.remove());
+            
+            // Clear the cell
+            cell.entity = null;
+            cell.enemy = null;
+            
+            // Find a non-adjacent empty hex to relocate to
+            const nonAdjacentEmpty = findNonAdjacentEmptyHex(playerHexIndex, neighborIndices, totalHexes);
+            if (nonAdjacentEmpty !== null) {
+                placeEntityOnHex(nonAdjacentEmpty, entityToMove);
+                console.log(`Relocated ${entityToMove.id} to hex ${nonAdjacentEmpty}`);
+            } else {
+                console.warn(`Could not find a non-adjacent hex to relocate ${entityToMove.id}`);
+            }
+        }
     });
     
-    if (emptyNeighbors.length === 0) {
-        console.warn('No empty neighbors for player hex, cannot place shield surge');
+    // Step 2: Ensure one B03 (Shield Surge) is adjacent
+    const b03 = GameData.entities.find(e => e.id === 'B03');
+    const hasAdjacentB03 = neighborIndices.some(hexIndex => {
+        const cell = GameState.board[hexIndex];
+        return cell && cell.entity && cell.entity.id === 'B03';
+    });
+    
+    if (!hasAdjacentB03 && b03) {
+        // Find an empty adjacent hex for B03
+        const emptyNeighbors = neighborIndices.filter(hexIndex => {
+            const cell = GameState.board[hexIndex];
+            return !cell || !cell.entity;
+        });
+        
+        if (emptyNeighbors.length > 0) {
+            const randomIdx = Math.floor(Math.random() * emptyNeighbors.length);
+            const surgeHex = emptyNeighbors[randomIdx];
+            placeEntityOnHex(surgeHex, { ...b03 });
+            console.log(`Placed B03 (Shield Surge) at adjacent hex ${surgeHex}`);
+        } else {
+            // Swap a non-essential adjacent entity with a B03 from elsewhere
+            swapEntityIntoAdjacent(svg, neighborIndices, 'B03', b03, playerHexIndex, totalHexes);
+        }
+    }
+    
+    // Step 3: Ensure one E05 is adjacent
+    const e05 = GameData.entities.find(e => e.id === 'E05');
+    const hasAdjacentE05 = neighborIndices.some(hexIndex => {
+        const cell = GameState.board[hexIndex];
+        return cell && cell.entity && cell.entity.id === 'E05';
+    });
+    
+    if (!hasAdjacentE05 && e05) {
+        // Find an empty adjacent hex for E05
+        const emptyNeighbors = neighborIndices.filter(hexIndex => {
+            const cell = GameState.board[hexIndex];
+            return !cell || !cell.entity;
+        });
+        
+        if (emptyNeighbors.length > 0) {
+            const randomIdx = Math.floor(Math.random() * emptyNeighbors.length);
+            const e05Hex = emptyNeighbors[randomIdx];
+            placeEntityOnHex(e05Hex, { ...e05 });
+            console.log(`Placed E05 at adjacent hex ${e05Hex}`);
+        } else {
+            // Find an E05 on the board and swap it with a non-essential adjacent entity
+            swapEntityIntoAdjacent(svg, neighborIndices, 'E05', e05, playerHexIndex, totalHexes);
+        }
+    }
+    
+    console.log('Player adjacent hexes configured');
+}
+
+// Find a non-adjacent empty hex (not the player hex or its neighbors)
+function findNonAdjacentEmptyHex(playerHexIndex, neighborIndices, totalHexes) {
+    const excludeSet = new Set([playerHexIndex, ...neighborIndices]);
+    const candidates = [];
+    
+    for (let i = 0; i < totalHexes; i++) {
+        if (excludeSet.has(i)) continue;
+        const cell = GameState.board[i];
+        if (!cell || !cell.entity) {
+            candidates.push(i);
+        }
+    }
+    
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// Swap an entity from elsewhere on the board into an adjacent hex
+// Moves a non-essential adjacent entity out to make room
+function swapEntityIntoAdjacent(svg, neighborIndices, targetId, targetEntity, playerHexIndex, totalHexes) {
+    // Find an adjacent hex with a non-essential entity (not B03, E05, E10, E15)
+    const protectedIds = new Set(['B03', 'E05', 'E10', 'E15']);
+    const swapCandidates = neighborIndices.filter(hexIndex => {
+        const cell = GameState.board[hexIndex];
+        return cell && cell.entity && !protectedIds.has(cell.entity.id);
+    });
+    
+    if (swapCandidates.length === 0) {
+        console.warn(`Cannot place ${targetId} adjacent - no swappable neighbors`);
         return;
     }
     
-    // Pick a random empty neighbor
-    const randomNeighborIndex = Math.floor(Math.random() * emptyNeighbors.length);
-    const surgeHexIndex = emptyNeighbors[randomNeighborIndex];
+    // Pick a random adjacent hex to swap
+    const swapHex = swapCandidates[Math.floor(Math.random() * swapCandidates.length)];
+    const existingEntity = GameState.board[swapHex].entity;
     
-    // Place B03 shield surge entity
-    placeEntityOnHex(surgeHexIndex, b03);
+    // Find a non-adjacent hex with the target entity to swap with
+    const excludeSet = new Set([playerHexIndex, ...neighborIndices]);
+    let sourceHex = null;
     
-    console.log(`Placed shield surge (B03) at hex index ${surgeHexIndex} (adjacent to player)`);
+    for (let i = 0; i < totalHexes; i++) {
+        if (excludeSet.has(i)) continue;
+        const cell = GameState.board[i];
+        if (cell && cell.entity && cell.entity.id === targetId) {
+            sourceHex = i;
+            break;
+        }
+    }
+    
+    if (sourceHex === null) {
+        console.warn(`No ${targetId} found on board to swap into adjacent`);
+        return;
+    }
+    
+    // Remove visuals from both hexes
+    [swapHex, sourceHex].forEach(hexIndex => {
+        const images = svg.querySelectorAll(`image[data-hex-index="${hexIndex}"]`);
+        images.forEach(img => {
+            if (!img.hasAttribute('data-player')) img.remove();
+        });
+        const texts = svg.querySelectorAll(`text[data-hex-index="${hexIndex}"]`);
+        texts.forEach(text => text.remove());
+    });
+    
+    // Save the source entity before clearing
+    const sourceEntity = GameState.board[sourceHex].entity;
+    
+    // Clear both cells
+    GameState.board[swapHex].entity = null;
+    GameState.board[swapHex].enemy = null;
+    GameState.board[sourceHex].entity = null;
+    GameState.board[sourceHex].enemy = null;
+    
+    // Place the target entity in the adjacent hex and the displaced entity in the source hex
+    placeEntityOnHex(swapHex, sourceEntity || { ...targetEntity });
+    placeEntityOnHex(sourceHex, existingEntity);
+    
+    console.log(`Swapped ${targetId} into adjacent hex ${swapHex}, moved ${existingEntity.id} to hex ${sourceHex}`);
 }
 
 // Cover all hexes to hide their contents (except player's starting hex)
@@ -1560,7 +1700,8 @@ function addNeighborDamageSums(svg) {
 }
 
 // Update neighbor damage sum for a specific hex and its neighbors
-function updateNeighborDamageSums(clearedHexIndex) {
+// If withScan is true, plays a scanning pulse effect before revealing sums
+function updateNeighborDamageSums(clearedHexIndex, withScan = false) {
     const svg = boardContainer.querySelector('svg');
     if (!svg) return;
     
@@ -1570,13 +1711,104 @@ function updateNeighborDamageSums(clearedHexIndex) {
     // Also update the cleared hex itself (in case it becomes empty)
     const hexesToUpdate = [...neighborIndices, clearedHexIndex];
     
-    hexesToUpdate.forEach(hexIndex => {
-        updateSingleHexDamageSum(svg, hexIndex);
-    });
+    if (withScan) {
+        // Play scan effect, then fade in sums
+        playScanEffect(svg, clearedHexIndex, () => {
+            hexesToUpdate.forEach(hexIndex => {
+                updateSingleHexDamageSum(svg, hexIndex, true); // true = fade in
+            });
+        });
+    } else {
+        hexesToUpdate.forEach(hexIndex => {
+            updateSingleHexDamageSum(svg, hexIndex);
+        });
+    }
+}
+
+// Play a scanning pulse effect emanating from the center of a hex
+function playScanEffect(svg, hexIndex, onComplete) {
+    const boardGroup = svg.querySelector('#board');
+    const hexPolygons = boardGroup ? boardGroup.querySelectorAll('polygon') : svg.querySelectorAll('polygon');
+    const hexPolygon = hexPolygons[hexIndex];
+    if (!hexPolygon) {
+        if (onComplete) onComplete();
+        return;
+    }
+    
+    const bbox = hexPolygon.getBBox();
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y + bbox.height / 2;
+    
+    // Maximum radius to cover neighboring hexes
+    const maxRadius = 120;
+    const duration = 600; // ms
+    const numRings = 3;
+    
+    const rings = [];
+    
+    for (let i = 0; i < numRings; i++) {
+        const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        ring.setAttribute('cx', centerX.toString());
+        ring.setAttribute('cy', centerY.toString());
+        ring.setAttribute('r', '0');
+        ring.setAttribute('fill', 'none');
+        ring.setAttribute('stroke', '#00d4ff');
+        ring.setAttribute('stroke-width', '2');
+        ring.setAttribute('opacity', '0');
+        ring.setAttribute('pointer-events', 'none');
+        ring.setAttribute('data-scan-ring', 'true');
+        svg.appendChild(ring);
+        rings.push({ element: ring, delay: i * 120 });
+    }
+    
+    const startTime = performance.now();
+    
+    function animateScan(currentTime) {
+        const elapsed = currentTime - startTime;
+        let allDone = true;
+        
+        rings.forEach(({ element, delay }) => {
+            const ringElapsed = elapsed - delay;
+            if (ringElapsed < 0) {
+                allDone = false;
+                return;
+            }
+            
+            const progress = Math.min(ringElapsed / duration, 1);
+            
+            // Ease out for expanding ring
+            const easedProgress = 1 - Math.pow(1 - progress, 2);
+            
+            const radius = easedProgress * maxRadius;
+            const opacity = (1 - progress) * 0.6;
+            const strokeWidth = 2 - progress * 1.5;
+            
+            element.setAttribute('r', radius.toString());
+            element.setAttribute('opacity', Math.max(0, opacity).toFixed(3));
+            element.setAttribute('stroke-width', Math.max(0.5, strokeWidth).toFixed(2));
+            
+            if (progress < 1) {
+                allDone = false;
+            }
+        });
+        
+        if (!allDone) {
+            requestAnimationFrame(animateScan);
+        } else {
+            // Clean up rings
+            rings.forEach(({ element }) => element.remove());
+            
+            // Trigger callback
+            if (onComplete) onComplete();
+        }
+    }
+    
+    requestAnimationFrame(animateScan);
 }
 
 // Update the damage sum display for a single hex
-function updateSingleHexDamageSum(svg, hexIndex) {
+// If fadeIn is true, the sum text fades in over 400ms instead of appearing instantly
+function updateSingleHexDamageSum(svg, hexIndex, fadeIn = false) {
     // Get neighbors of this hex
     const neighborIndices = getNeighborIndices(hexIndex);
     
@@ -1640,10 +1872,27 @@ function updateSingleHexDamageSum(svg, hexIndex) {
         damageSumText.textContent = totalDamage.toString();
         
         // Show opacity based on reveal state
-        // Revealed empty hexes: show (opacity 1)
+        // Revealed empty hexes: show (opacity 1 or fade in)
         // Unrevealed hexes: hide (opacity 0) - will be shown when revealed if empty
         if (cell && cell.revealed && isEmpty) {
-            damageSumText.setAttribute('opacity', '1');
+            if (fadeIn) {
+                // Start hidden and fade in
+                damageSumText.setAttribute('opacity', '0');
+                // Animate opacity with requestAnimationFrame
+                const fadeStart = performance.now();
+                const fadeDuration = 400;
+                function fadeInText(currentTime) {
+                    const elapsed = currentTime - fadeStart;
+                    const progress = Math.min(elapsed / fadeDuration, 1);
+                    damageSumText.setAttribute('opacity', progress.toFixed(3));
+                    if (progress < 1) {
+                        requestAnimationFrame(fadeInText);
+                    }
+                }
+                requestAnimationFrame(fadeInText);
+            } else {
+                damageSumText.setAttribute('opacity', '1');
+            }
         } else {
             damageSumText.setAttribute('opacity', '0');
         }
@@ -1933,8 +2182,8 @@ function movePlayerToHex(hexIndex) {
                 // Player defeats enemy and clears the hex
                 defeatEnemy(hexPolygon, entity, hexIndex);
                 
-                // Update neighbor damage sums for all neighbors of cleared hex
-                updateNeighborDamageSums(hexIndex);
+                // Update neighbor damage sums with scan effect
+                updateNeighborDamageSums(hexIndex, true);
                 
                 // Update cleared display
                 updateDisplays();
@@ -1947,8 +2196,8 @@ function movePlayerToHex(hexIndex) {
             hexPolygon.classList.add('cleared');
             console.log('Moved to empty hex');
             
-            // Update neighbor damage sums (in case this hex had an entity before)
-            updateNeighborDamageSums(hexIndex);
+            // Update neighbor damage sums with scan effect
+            updateNeighborDamageSums(hexIndex, true);
             
             // Update cleared display
             updateDisplays();
@@ -2197,10 +2446,8 @@ function defeatEnemy(hex, enemy, hexIndex) {
     // Visual feedback
     hex.classList.add('defeated');
     
-    // Update damage sums for this hex and its neighbors
-    // This is important because clearing an entity changes whether the hex is empty,
-    // which affects the positioning of the damage sum text
-    updateNeighborDamageSums(hexIndex);
+    // Note: damage sums are updated by the caller (handleEntityAfterAnimation)
+    // with the scan effect, so we don't update them here to avoid double display
     
     updateDisplays();
 }
@@ -2704,28 +2951,28 @@ function getPartsNeededForRecharge() {
     const partsNeededPattern = [
         4,  // rechargeCount 0: need 4 parts
         5,  // rechargeCount 1: need 5 parts
-        6,  // rechargeCount 2: need 6 parts
-        7,  // rechargeCount 3: need 7 parts
-        8,  // rechargeCount 4: need 8 parts
-        9,  // rechargeCount 5: need 9 parts
-        10, // rechargeCount 6: need 10 parts
-        11, // rechargeCount 7: need 11 parts
-        12, // rechargeCount 8: need 12 parts
-        13, // rechargeCount 9: need 13 parts
-        14, // rechargeCount 10: need 14 parts
-        15, // rechargeCount 11: need 15 parts
-        16, // rechargeCount 12: need 16 parts
-        17, // rechargeCount 13: need 17 parts
-        18, // rechargeCount 14: need 18 parts
-        19, // rechargeCount 15: need 19 parts
-        20, // rechargeCount 16: need 20 parts
-        21, // rechargeCount 17: need 21 parts
-        22, // rechargeCount 18: need 22 parts
-        23, // rechargeCount 19: need 23 parts
-        24, // rechargeCount 20: need 24 parts
-        25, // rechargeCount 21: need 25 parts
-        25, // rechargeCount 22: need 25 parts (capped)
-        25, // rechargeCount 23: need 25 parts (capped)
+        5,  // rechargeCount 2: need 6 parts
+        6,  // rechargeCount 3: need 7 parts
+        6,  // rechargeCount 4: need 8 parts
+        7,  // rechargeCount 5: need 9 parts
+        7, // rechargeCount 6: need 10 parts
+        8, // rechargeCount 7: need 11 parts
+        9, // rechargeCount 8: need 12 parts
+        10, // rechargeCount 9: need 13 parts
+        11, // rechargeCount 10: need 14 parts
+        12, // rechargeCount 11: need 15 parts
+        13, // rechargeCount 12: need 16 parts
+        14, // rechargeCount 13: need 17 parts
+        15, // rechargeCount 14: need 18 parts
+        16, // rechargeCount 15: need 19 parts
+        17, // rechargeCount 16: need 20 parts
+        18, // rechargeCount 17: need 21 parts
+        19, // rechargeCount 18: need 22 parts
+        20, // rechargeCount 19: need 23 parts
+        21, // rechargeCount 20: need 24 parts
+        22, // rechargeCount 21: need 25 parts
+        23, // rechargeCount 22: need 25 parts (capped)
+        24, // rechargeCount 23: need 25 parts (capped)
         25, // rechargeCount 24: need 25 parts (capped)
         25, // rechargeCount 25: need 25 parts (capped)
         25, // rechargeCount 26: need 25 parts (capped)
@@ -2750,22 +2997,22 @@ function getShieldLevelAfterRecharge() {
         5,  // rechargeCount 1 -> 5 shields (after 2nd recharge)
         6,  // rechargeCount 2 -> 6 shields (after 3rd recharge)
         6,  // rechargeCount 3 -> 6 shields (after 4th recharge)
-        6,  // rechargeCount 4 -> 6 shields (after 5th recharge)
+        7,  // rechargeCount 4 -> 6 shields (after 5th recharge)
         7,  // rechargeCount 5 -> 7 shields (after 6th recharge)
-        7,  // rechargeCount 6 -> 7 shields (after 7th recharge)
-        7,  // rechargeCount 7 -> 7 shields (after 8th recharge)
+        8,  // rechargeCount 6 -> 7 shields (after 7th recharge)
+        8,  // rechargeCount 7 -> 7 shields (after 8th recharge)
         8,  // rechargeCount 8 -> 8 shields (after 9th recharge)
-        8,  // rechargeCount 9 -> 8 shields (after 10th recharge)
-        8,  // rechargeCount 10 -> 8 shields (after 11th recharge)
+        9,  // rechargeCount 9 -> 8 shields (after 10th recharge)
+        9,  // rechargeCount 10 -> 8 shields (after 11th recharge)
         9,  // rechargeCount 11 -> 9 shields (after 12th recharge)
-        9,  // rechargeCount 12 -> 9 shields (after 13th recharge)
-        9,  // rechargeCount 13 -> 9 shields (after 14th recharge)
+        10,  // rechargeCount 12 -> 9 shields (after 13th recharge)
+        10,  // rechargeCount 13 -> 9 shields (after 14th recharge)
         10, // rechargeCount 14 -> 10 shields (after 15th recharge)
-        10, // rechargeCount 15 -> 10 shields (after 16th recharge)
-        10, // rechargeCount 16 -> 10 shields (after 17th recharge)
+        11, // rechargeCount 15 -> 10 shields (after 16th recharge)
+        11, // rechargeCount 16 -> 10 shields (after 17th recharge)
         11, // rechargeCount 17 -> 11 shields (after 18th recharge)
-        11, // rechargeCount 18 -> 11 shields (after 19th recharge)
-        11, // rechargeCount 19 -> 11 shields (after 20th recharge)
+        12, // rechargeCount 18 -> 11 shields (after 19th recharge)
+        12, // rechargeCount 19 -> 11 shields (after 20th recharge)
         12, // rechargeCount 20 -> 12 shields (after 21st recharge)
         12, // rechargeCount 21 -> 12 shields (after 22nd recharge)
         12, // rechargeCount 22 -> 12 shields (after 23rd recharge)
